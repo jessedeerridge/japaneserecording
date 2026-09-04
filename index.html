@@ -118,6 +118,7 @@ async function loadTemplates(){
   if(!res.ok)throw new Error("voice_templates.json を読み込めません");
   const data=await res.json();
   templates=data.templates||data;
+  classLimitCache={};
 }
 
 function newQuestion(){
@@ -517,6 +518,41 @@ function classScores(feat){
   return scores;
 }
 
+let classLimitCache={};
+
+function median(arr){
+  if(!arr.length)return Infinity;
+  const a=[...arr].sort((x,y)=>x-y);
+  const m=Math.floor(a.length/2);
+  return a.length%2 ? a[m] : (a[m-1]+a[m])/2;
+}
+
+// 正解録音3回どうしの距離から、その語の「正解として許せる範囲」を自動計算。
+// 一律のゆるい閾値ではなく、語ごとに厳しさを変える。
+function classLimit(key){
+  if(classLimitCache[key])return classLimitCache[key];
+
+  const refs=templates[key]||[];
+  const pair=[];
+
+  for(let i=0;i<refs.length;i++){
+    for(let j=i+1;j<refs.length;j++){
+      try{
+        const d=flexibleDtw(refs[i],refs[j]);
+        if(Number.isFinite(d))pair.push(d);
+      }catch{}
+    }
+  }
+
+  // 登録音どうしの中央値を基準にする。
+  // 1.35倍 + 最小余裕だけ。以前よりかなり厳しい。
+  const base=median(pair);
+  const limit=Number.isFinite(base) ? base*1.35+0.006 : Infinity;
+
+  classLimitCache[key]={base,limit,pair};
+  return classLimitCache[key];
+}
+
 function judgeTarget(feat,target){
   const scores=classScores(feat);
   if(!scores.length)return {correct:false,best:null,rank:-1,target:null};
@@ -524,16 +560,36 @@ function judgeTarget(feat,target){
   const rank=scores.findIndex(x=>x.key===target);
   const targetObj=rank>=0?scores[rank]:null;
   const best=scores[0];
+  const second=scores[1]||null;
 
   if(!targetObj)return {correct:false,best,rank:-1,target:null};
 
-  // Primary rule: target is the closest class.
-  // If it is a nearly-tied 2nd place, accept it as well. This handles
-  // acoustically very close pairs such as みて / きて.
-  const ratio=targetObj.score/(best.score||1e-9);
-  const correct=(rank===0)||(rank===1 && ratio<=1.045);
+  const cal=classLimit(target);
 
-  return {correct,best,rank,target:targetObj,ratio,scores};
+  // 条件1: 必ず1位。以前の「2位でもほぼ同じなら○」は廃止。
+  const rankPass=(rank===0);
+
+  // 条件2: 正解録音そのものから離れすぎていたら×。
+  // 「どれかの語には一番近い」だけでは○にしない。
+  const absolutePass=targetObj.score<=cal.limit;
+
+  // 条件3: 2位との差が小さすぎる曖昧な音も×。
+  // ただし登録音に非常に近い場合だけ少し救済。
+  const separation=second ? targetObj.score/(second.score||1e-9) : 0;
+  const veryCloseToReference=targetObj.score<=cal.limit*0.72;
+  const separationPass=!second || separation<=0.965 || veryCloseToReference;
+
+  const correct=rankPass && absolutePass && separationPass;
+
+  return {
+    correct,best,second,rank,target:targetObj,
+    ratio:best ? targetObj.score/(best.score||1e-9) : Infinity,
+    separation,
+    limit:cal.limit,
+    base:cal.base,
+    rankPass,absolutePass,separationPass,
+    scores
+  };
 }
 
 async function attempt(){
@@ -570,7 +626,9 @@ async function attempt(){
     `peak=${raw.peak.toFixed(4)} / `+
     `目標=${target} / 最接近=${judged.best.key} / `+
     `目標順位=${judged.rank+1} / `+
-    `比=${Number.isFinite(judged.ratio)?judged.ratio.toFixed(3):"-"}`;
+    `距離=${judged.target?.score?.toFixed?.(4) ?? "-"} / `+
+    `上限=${Number.isFinite(judged.limit)?judged.limit.toFixed(4):"-"} / `+
+    `2位比=${Number.isFinite(judged.separation)?judged.separation.toFixed(3):"-"}`;
 
   if(judged.correct){
     result.textContent="○";
