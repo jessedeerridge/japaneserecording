@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v8.3・DTW一致率判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v8.4・正解時間軸判定</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -1131,6 +1131,207 @@ function targetCoverageScore(feat,key){
   };
 }
 
+
+function dtwAlignedPairs(A,B){
+  const n=A.length,m=B.length;
+  if(!n||!m)return [];
+
+  const band=Math.max(8,Math.ceil(Math.max(n,m)*.32));
+  const W=m+1;
+  const cost=new Float64Array((n+1)*(m+1));
+  const move=new Uint8Array((n+1)*(m+1));
+  cost.fill(Infinity);
+  cost[0]=0;
+
+  for(let i=1;i<=n;i++){
+    const center=i*m/n;
+    const j0=Math.max(1,Math.floor(center-band));
+    const j1=Math.min(m,Math.ceil(center+band));
+
+    for(let j=j0;j<=j1;j++){
+      const idx=i*W+j;
+      const c=frameDistance(A[i-1],B[j-1]);
+
+      const diag=cost[(i-1)*W+(j-1)];
+      const up=cost[(i-1)*W+j] + 0.035;    // 伸縮しすぎを少し罰する
+      const left=cost[i*W+(j-1)] + 0.035;
+
+      let best=diag,dir=1;
+      if(up<best){best=up;dir=2}
+      if(left<best){best=left;dir=3}
+
+      if(Number.isFinite(best)){
+        cost[idx]=best+c;
+        move[idx]=dir;
+      }
+    }
+  }
+
+  if(!Number.isFinite(cost[n*W+m]))return [];
+
+  let i=n,j=m;
+  const pairs=[];
+
+  while(i>0 && j>0){
+    pairs.push({
+      qi:i-1,
+      ri:j-1,
+      d:frameDistance(A[i-1],B[j-1])
+    });
+
+    const dir=move[i*W+j];
+    if(dir===1){i--;j--}
+    else if(dir===2){i--}
+    else if(dir===3){j--}
+    else break;
+  }
+
+  pairs.reverse();
+  return pairs;
+}
+
+function referenceTimelineProfile(query,ref,bins){
+  const pairs=dtwAlignedPairs(query,ref);
+  if(!pairs.length)return [];
+
+  // 正解音声(ref)の時間軸をbins個に固定分割。
+  // DTWが違う部分を短く圧縮しても、各binは必ず同じ重さで評価される。
+  const bucket=Array.from({length:bins},()=>[]);
+
+  for(const p of pairs){
+    const x=ref.length<=1 ? 0 : p.ri/(ref.length-1);
+    const b=Math.min(bins-1,Math.floor(x*bins));
+    bucket[b].push(p.d);
+  }
+
+  const profile=[];
+  for(let b=0;b<bins;b++){
+    const arr=bucket[b];
+    if(!arr.length){
+      profile.push(Infinity);
+      continue;
+    }
+    arr.sort((a,b)=>a-b);
+
+    // 最小値ではなく中央値。偶然1フレームだけ似ていても通さない。
+    profile.push(arr[Math.floor(arr.length/2)]);
+  }
+
+  return profile;
+}
+
+const timelineCalCache={};
+
+function timelineCalibration(key,bins){
+  const cacheKey=key+"|"+bins;
+  if(timelineCalCache[cacheKey])return timelineCalCache[cacheKey];
+
+  const refs=templates[key]||[];
+  const perBin=Array.from({length:bins},()=>[]);
+
+  for(let i=0;i<refs.length;i++){
+    for(let j=i+1;j<refs.length;j++){
+      const p=referenceTimelineProfile(refs[i],refs[j],bins);
+      if(p.length!==bins)continue;
+      for(let b=0;b<bins;b++){
+        if(Number.isFinite(p[b]))perBin[b].push(p[b]);
+      }
+    }
+  }
+
+  const limits=perBin.map(arr=>{
+    if(!arr.length)return Infinity;
+    arr.sort((a,b)=>a-b);
+    const med=arr[Math.floor(arr.length/2)];
+    const mx=arr[arr.length-1];
+
+    // 各位置ごとの正解録音3回の揺れを基準にする。
+    return Math.max(mx*1.55,med*1.80,0.52);
+  });
+
+  const out={limits};
+  timelineCalCache[cacheKey]=out;
+  return out;
+}
+
+function targetTimelineScore(feat,key){
+  const refs=templates[key]||[];
+
+  // 短い語ほど細かく見る。
+  // 3モーラなら9区間、4モーラなら12区間。
+  const moraCount=Math.max(1,Array.from(key).length);
+  const bins=Math.max(9,Math.min(24,moraCount*3));
+
+  const cal=timelineCalibration(key,bins);
+  const profiles=[];
+
+  for(const ref of refs){
+    const p=referenceTimelineProfile(feat,ref,bins);
+    if(p.length===bins)profiles.push(p);
+  }
+
+  if(!profiles.length){
+    return {
+      bins,
+      goodRatio:0,
+      badBins:bins,
+      longestBadRun:bins,
+      profile:[],
+      limits:cal.limits
+    };
+  }
+
+  // 登録3回のうち2回以上で合うことを重視。
+  const merged=[];
+  for(let b=0;b<bins;b++){
+    const vals=profiles
+      .map(p=>p[b])
+      .filter(Number.isFinite)
+      .sort((a,b)=>a-b);
+
+    if(!vals.length){
+      merged.push(Infinity);
+    }else if(vals.length===1){
+      merged.push(vals[0]);
+    }else{
+      // 近い2回の平均
+      merged.push((vals[0]+vals[1])/2);
+    }
+  }
+
+  const good=[];
+  for(let b=0;b<bins;b++){
+    good.push(
+      Number.isFinite(cal.limits[b]) &&
+      Number.isFinite(merged[b]) &&
+      merged[b] <= cal.limits[b]
+    );
+  }
+
+  const goodCount=good.filter(Boolean).length;
+  const badBins=bins-goodCount;
+
+  let cur=0,longestBadRun=0;
+  for(const g of good){
+    if(g){
+      cur=0;
+    }else{
+      cur++;
+      if(cur>longestBadRun)longestBadRun=cur;
+    }
+  }
+
+  return {
+    bins,
+    goodRatio:goodCount/bins,
+    badBins,
+    longestBadRun,
+    good,
+    profile:merged,
+    limits:cal.limits
+  };
+}
+
 function judge(feat,target){
   const scores=classScores(feat,templates);
   if(!scores.length)return {correct:false,best:null,scores};
@@ -1138,6 +1339,7 @@ function judge(feat,target){
   const best=scores[0];
   const second=scores[1]||null;
 
+  // ① 語全体でも正解語が最接近であること。
   if(best.key!==target){
     return {
       correct:false,best,second,scores,
@@ -1145,22 +1347,40 @@ function judge(feat,target){
     };
   }
 
-  const cov=targetCoverageScore(feat,target);
+  // ② 正解音声の時間軸を固定して、最初から最後まで全部を見る。
+  const tl=targetTimelineScore(feat,target);
 
-  const coveragePass=cov.coverage>=.82;
-  const badRunPass=cov.badRun<=.22;
-  const correct=coveragePass&&badRunPass;
+  const moraCount=Math.max(1,Array.from(target).length);
+
+  // 3～4モーラ程度の短語では、1モーラ違いを逃さないよう特に厳しく。
+  let minGoodRatio=.88;
+  let maxBadRun=1;
+
+  if(moraCount<=3){
+    minGoodRatio=.92;
+    maxBadRun=1;
+  }else if(moraCount===4){
+    minGoodRatio=.90;
+    maxBadRun=1;
+  }else{
+    minGoodRatio=.86;
+    maxBadRun=2;
+  }
+
+  const coveragePass=tl.goodRatio>=minGoodRatio;
+  const runPass=tl.longestBadRun<=maxBadRun;
+
+  const correct=coveragePass&&runPass;
 
   return {
     correct,
     best,second,scores,
-    coverage:cov.coverage,
-    badRun:cov.badRun,
-    p80:cov.p80,
-    localThreshold:cov.threshold,
+    timeline:tl,
+    minGoodRatio,
+    maxBadRun,
     coveragePass,
-    badRunPass,
-    reason:correct ? "ok" : "coverage"
+    runPass,
+    reason:correct ? "ok" : "timeline"
   };
 }
 
@@ -1189,10 +1409,11 @@ async function attempt(){
 
   if(DEBUG){
     const word=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
-    const covInfo=Number.isFinite(j.coverage)
-      ? ` / 一致率=${Math.round(j.coverage*100)}% / 連続不一致=${Math.round(j.badRun*100)}%`
+    const tl=j.timeline
+      ? ` / 正解区間=${j.timeline.good.filter(Boolean).length}/${j.timeline.bins}`
+        +` / 最大連続×=${j.timeline.longestBadRun}`
       : "";
-    debugEl.textContent=word+covInfo;
+    debugEl.textContent=word+tl;
   }
 
   if(j.correct){
@@ -1203,8 +1424,9 @@ async function attempt(){
   }else{
     result.textContent="×";
     result.className="result ng";
-    if(j.reason==="coverage"){
-      statusEl.textContent=`一致率 ${Math.round(j.coverage*100)}%：正解音声と違う部分があります`;
+    if(j.reason==="timeline"){
+      const ok=j.timeline.good.filter(Boolean).length;
+      statusEl.textContent=`正解音声との一致 ${ok}/${j.timeline.bins} 区間`;
     }else{
       statusEl.textContent=`いちばん近い音：${j.best.key}`;
     }
