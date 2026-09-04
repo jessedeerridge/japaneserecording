@@ -1,1 +1,488 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>て形 音声練習</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;background:#f4f4f4;color:#111;
+  font-family:system-ui,-apple-system,"Noto Sans JP","Yu Gothic",sans-serif;
+}
+.wrap{
+  width:min(620px,94vw);
+  margin:24px auto 60px;
+}
+.card{
+  background:#fff;
+  border:1px solid #ddd;
+  border-radius:20px;
+  padding:24px;
+  box-shadow:0 5px 18px rgba(0,0,0,.06);
+  text-align:center;
+}
+h1{font-size:23px;margin:0 0 8px}
+.sub{font-size:13px;color:#666;margin-bottom:18px}
+.problem{
+  font-size:54px;
+  font-weight:900;
+  min-height:110px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:2px solid #222;
+  border-radius:18px;
+  margin-bottom:16px;
+}
+.recordBox{
+  min-height:160px;
+  border:3px solid #111;
+  border-radius:18px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  transition:background .2s ease,color .2s ease;
+}
+.recordBox.recording{
+  background:#111;
+  color:#fff;
+}
+.recordMain{
+  font-size:28px;
+  font-weight:900;
+}
+.recordSub{
+  font-size:16px;
+  margin-top:7px;
+}
+.result{
+  min-height:44px;
+  margin-top:14px;
+  font-size:30px;
+  font-weight:900;
+}
+.ok{color:#087f23}
+.ng{color:#c62828}
+.status{
+  min-height:22px;
+  margin-top:8px;
+  font-size:14px;
+  color:#666;
+}
+button{
+  border:0;
+  border-radius:13px;
+  padding:14px 20px;
+  font-size:17px;
+  font-weight:700;
+  cursor:pointer;
+}
+.primary{background:#111;color:#fff}
+button:disabled{opacity:.45}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>て形 音声練習</h1>
+    <div class="sub">問題が出たら、て形を言ってください。</div>
 
+    <div id="problem" class="problem">読み込み中…</div>
+
+    <div id="recordBox" class="recordBox">
+      <div id="recordMain" class="recordMain">準備中</div>
+      <div id="recordSub" class="recordSub"></div>
+    </div>
+
+    <div id="result" class="result"></div>
+    <div id="status" class="status"></div>
+
+    <button id="startBtn" class="primary hidden">開始</button>
+  </div>
+</div>
+
+<script>
+const ITEMS=[
+  ["書きます","かいて"],
+  ["聞きます","きいて"],
+  ["読みます","よんで"],
+  ["飲みます","のんで"],
+  ["話します","はなして"],
+  ["食べます","たべて"],
+  ["見ます","みて"],
+  ["起きます","おきて"],
+  ["寝ます","ねて"],
+  ["行きます","いって"],
+  ["買います","かって"],
+  ["待ちます","まって"],
+  ["遊びます","あそんで"],
+  ["泳ぎます","およいで"],
+  ["します","して"],
+  ["来ます","きて"]
+];
+
+const $=s=>document.querySelector(s);
+const problem=$("#problem");
+const recordBox=$("#recordBox");
+const recordMain=$("#recordMain");
+const recordSub=$("#recordSub");
+const result=$("#result");
+const statusEl=$("#status");
+const startBtn=$("#startBtn");
+
+let templates={};
+let threshold=60;
+let currentIndex=0;
+let sharedStream=null;
+let audioCtx=null;
+let running=false;
+let started=false;
+
+function newQuestion(){
+  let n;
+  do{
+    n=Math.floor(Math.random()*ITEMS.length);
+  }while(n===currentIndex && ITEMS.length>1);
+
+  currentIndex=n;
+  problem.textContent=ITEMS[n][0];
+  result.textContent="";
+  statusEl.textContent="";
+}
+
+async function loadTemplates(){
+  const res=await fetch("./voice_templates.json?v="+Date.now(),{cache:"no-store"});
+  if(!res.ok) throw new Error("voice_templates.json を読み込めません");
+  const data=await res.json();
+  templates=data.templates || data;
+  if(Number.isFinite(Number(data.threshold))){
+    threshold=Number(data.threshold);
+  }
+}
+
+async function ensureMic(){
+  if(sharedStream && sharedStream.active)return sharedStream;
+
+  sharedStream=await navigator.mediaDevices.getUserMedia({
+    audio:{
+      echoCancellation:true,
+      noiseSuppression:true,
+      autoGainControl:true,
+      channelCount:1
+    }
+  });
+
+  if(!audioCtx){
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  }
+  if(audioCtx.state==="suspended"){
+    await audioCtx.resume();
+  }
+  return sharedStream;
+}
+
+function resample(x,from,to){
+  if(from===to)return x;
+  const len=Math.max(1,Math.round(x.length*to/from));
+  const o=new Float32Array(len);
+  for(let i=0;i<len;i++){
+    const p=i*from/to;
+    const a=Math.floor(p);
+    const b=Math.min(x.length-1,a+1);
+    const t=p-a;
+    o[i]=x[a]*(1-t)+x[b]*t;
+  }
+  return o;
+}
+
+async function recordPcm(ms=1900){
+  const stream=await ensureMic();
+  const src=audioCtx.createMediaStreamSource(stream);
+  const proc=audioCtx.createScriptProcessor(2048,1,1);
+  const gain=audioCtx.createGain();
+  gain.gain.value=0;
+
+  const parts=[];
+
+  proc.onaudioprocess=e=>{
+    parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+
+  src.connect(proc);
+  proc.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  await new Promise(r=>setTimeout(r,ms));
+
+  proc.disconnect();
+  src.disconnect();
+  gain.disconnect();
+
+  const total=parts.reduce((n,a)=>n+a.length,0);
+  const raw=new Float32Array(total);
+  let pos=0;
+  for(const a of parts){
+    raw.set(a,pos);
+    pos+=a.length;
+  }
+
+  return resample(raw,audioCtx.sampleRate,16000);
+}
+
+function trim(x){
+  let mx=0;
+  for(const v of x)mx=Math.max(mx,Math.abs(v));
+  if(mx<.006)return x;
+
+  const th=Math.max(.01,mx*.07);
+  const w=320;
+
+  const rms=p=>{
+    let s=0,n=0;
+    for(let i=p;i<Math.min(x.length,p+w);i++){
+      s+=x[i]*x[i];
+      n++;
+    }
+    return Math.sqrt(s/Math.max(1,n));
+  };
+
+  let a=0,b=x.length;
+
+  for(let p=0;p<x.length-w;p+=160){
+    if(rms(p)>th){
+      a=Math.max(0,p-640);
+      break;
+    }
+  }
+
+  for(let p=x.length-w;p>0;p-=160){
+    if(rms(p)>th){
+      b=Math.min(x.length,p+w+640);
+      break;
+    }
+  }
+
+  return x.slice(a,b);
+}
+
+function fingerprint(x){
+  x=trim(x);
+  if(x.length<1500)throw new Error("声が短すぎます");
+
+  const F=28,B=18,N=256;
+  const out=[];
+
+  for(let f=0;f<F;f++){
+    const st=Math.max(
+      0,
+      Math.min(
+        x.length-N-1,
+        Math.floor((f+.5)/F*x.length-N/2)
+      )
+    );
+
+    const row=[];
+
+    for(let b=0;b<B;b++){
+      const fr=180*Math.pow(4200/180,b/(B-1));
+      const w=2*Math.PI*fr/16000;
+      let re=0,im=0;
+
+      for(let n=0;n<N;n++){
+        const win=.5-.5*Math.cos(2*Math.PI*n/(N-1));
+        const v=(x[st+n]||0)*win;
+        re+=v*Math.cos(w*n);
+        im-=v*Math.sin(w*n);
+      }
+
+      row.push(Math.log(1e-7+re*re+im*im));
+    }
+
+    const mean=row.reduce((a,b)=>a+b,0)/B;
+    let ss=0;
+
+    for(let b=0;b<B;b++){
+      row[b]-=mean;
+      ss+=row[b]*row[b];
+    }
+
+    const sd=Math.sqrt(ss/B)||1;
+    for(let b=0;b<B;b++)row[b]/=sd;
+
+    out.push(row);
+  }
+
+  return out;
+}
+
+function frameDist(a,b){
+  let s=0;
+  for(let i=0;i<a.length;i++){
+    const d=a[i]-b[i];
+    s+=d*d;
+  }
+  return Math.sqrt(s/a.length);
+}
+
+function dtw(A,B){
+  const n=A.length,m=B.length;
+  const prev=new Float64Array(m+1);
+  prev.fill(Infinity);
+  prev[0]=0;
+
+  for(let i=1;i<=n;i++){
+    const cur=new Float64Array(m+1);
+    cur.fill(Infinity);
+
+    for(let j=1;j<=m;j++){
+      const cost=frameDist(A[i-1],B[j-1]);
+      cur[j]=cost+Math.min(cur[j-1],prev[j],prev[j-1]);
+    }
+
+    prev.set(cur);
+  }
+
+  return prev[m]/(n+m);
+}
+
+function similarity(dist){
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(100*(1-dist/0.85))
+    )
+  );
+}
+
+function allClasses(feat){
+  const classes=[];
+
+  for(const [key,refs] of Object.entries(templates)){
+    if(!Array.isArray(refs)||!refs.length)continue;
+
+    let best=Infinity;
+
+    for(const ref of refs){
+      try{
+        best=Math.min(best,dtw(feat,ref));
+      }catch{}
+    }
+
+    classes.push({key,dist:best});
+  }
+
+  classes.sort((a,b)=>a.dist-b.dist);
+  return classes;
+}
+
+async function doAttempt(){
+  if(running)return;
+  running=true;
+
+  try{
+    const target=ITEMS[currentIndex][1];
+
+    recordBox.classList.add("recording");
+    recordMain.textContent=target;
+    recordSub.textContent="録音中";
+    result.textContent="";
+    statusEl.textContent="";
+
+    const pcm=await recordPcm(1900);
+    const feat=fingerprint(pcm);
+
+    recordBox.classList.remove("recording");
+    recordMain.textContent="";
+    recordSub.textContent="";
+
+    const classes=allClasses(feat);
+    const best=classes[0];
+    const targetClass=classes.find(x=>x.key===target);
+
+    if(!targetClass){
+      throw new Error("この問題の正解データがありません");
+    }
+
+    const sim=similarity(targetClass.dist);
+    const correct=
+      best &&
+      best.key===target &&
+      sim>=threshold;
+
+    if(correct){
+      result.textContent="○";
+      result.className="result ok";
+
+      await new Promise(r=>setTimeout(r,500));
+      newQuestion();
+
+      await new Promise(r=>setTimeout(r,300));
+      doAttempt();
+    }else{
+      result.textContent="×";
+      result.className="result ng";
+
+      await new Promise(r=>setTimeout(r,700));
+      doAttempt();
+    }
+
+  }catch(e){
+    console.error(e);
+    recordBox.classList.remove("recording");
+    recordMain.textContent="もう一度";
+    recordSub.textContent="";
+    statusEl.textContent=e.message||String(e);
+
+    await new Promise(r=>setTimeout(r,900));
+    doAttempt();
+  }finally{
+    running=false;
+  }
+}
+
+startBtn.onclick=async()=>{
+  try{
+    startBtn.disabled=true;
+    startBtn.textContent="準備中…";
+
+    await ensureMic();
+
+    started=true;
+    startBtn.classList.add("hidden");
+    newQuestion();
+
+    await new Promise(r=>setTimeout(r,400));
+    doAttempt();
+
+  }catch(e){
+    startBtn.disabled=false;
+    startBtn.textContent="開始";
+    statusEl.textContent="マイクを許可してください";
+  }
+};
+
+(async()=>{
+  try{
+    problem.textContent="正解データ読込中…";
+    await loadTemplates();
+
+    problem.textContent="準備OK";
+    recordMain.textContent="開始を押してください";
+    recordSub.textContent="最初だけマイクを許可します";
+    startBtn.classList.remove("hidden");
+
+  }catch(e){
+    problem.textContent="データエラー";
+    recordMain.textContent="";
+    recordSub.textContent="";
+    statusEl.textContent="voice_templates.json を index.html と同じ場所に置いてください";
+  }
+})();
+</script>
+</body>
+</html>
