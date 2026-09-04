@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.6・少し厳しく</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.7・活用部分チェック</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -719,6 +719,82 @@ function newQuestion(){
   statusEl.textContent="";
 }
 
+
+function interpFrame(seq,pos){
+  if(!seq.length)return [];
+  const p=Math.max(0,Math.min(seq.length-1,pos));
+  const a=Math.floor(p);
+  const b=Math.min(seq.length-1,a+1);
+  const t=p-a;
+  const A=seq[a],B=seq[b];
+  return A.map((v,i)=>v*(1-t)+B[i]*t);
+}
+
+function endingShapeDistance(A,B){
+  if(!A?.length||!B?.length)return Infinity;
+
+  const startFrac=.38;
+  const N=28;
+  let sum=0,wsum=0;
+
+  for(let i=0;i<N;i++){
+    const f=startFrac+(1-startFrac)*(i/(N-1));
+    const a=interpFrame(A,f*(A.length-1));
+    const b=interpFrame(B,f*(B.length-1));
+    const w=.8+1.0*(i/(N-1));
+    sum+=frameDistance(a,b)*w;
+    wsum+=w;
+  }
+
+  return sum/Math.max(1e-9,wsum);
+}
+
+const endingCalCache={};
+
+function endingCalibration(key){
+  if(endingCalCache[key])return endingCalCache[key];
+
+  const refs=templates[key]||[];
+  const pair=[];
+
+  for(let i=0;i<refs.length;i++){
+    for(let j=i+1;j<refs.length;j++){
+      const d=endingShapeDistance(refs[i],refs[j]);
+      if(Number.isFinite(d))pair.push(d);
+    }
+  }
+
+  pair.sort((a,b)=>a-b);
+  const med=pair.length ? pair[Math.floor(pair.length/2)] : Infinity;
+  const mx=pair.length ? pair[pair.length-1] : Infinity;
+
+  const limit=Number.isFinite(mx)
+    ? Math.max(mx*2.15,med*2.45)
+    : Infinity;
+
+  const out={median:med,max:mx,limit};
+  endingCalCache[key]=out;
+  return out;
+}
+
+function endingClassScore(feat,key){
+  const refs=templates[key]||[];
+  const ds=[];
+
+  for(const ref of refs){
+    const d=endingShapeDistance(feat,ref);
+    if(Number.isFinite(d))ds.push(d);
+  }
+
+  if(!ds.length)return Infinity;
+  ds.sort((a,b)=>a-b);
+
+  const take=Math.min(2,ds.length);
+  let s=0;
+  for(let i=0;i<take;i++)s+=ds[i];
+  return s/take;
+}
+
 function judge(feat,target){
   const scores=classScores(feat,templates);
   if(!scores.length)return {correct:false,best:null,scores};
@@ -727,23 +803,31 @@ function judge(feat,target){
   const second=scores[1]||null;
   const targetObj=scores.find(x=>x.key===target)||null;
 
-  // 正解語が1位であることは必須。
   if(best.key!==target){
-    return {correct:false,best,second,targetObj,scores,ratio:null};
+    return {
+      correct:false,best,second,targetObj,scores,
+      reason:"nearest"
+    };
   }
 
-  // 少しだけ厳しくする。
-  // 2位とほぼ同じ距離なら、たまたま1位になっただけなので×。
-  const ratio = second ? best.score/(second.score||1e-9) : 0;
-  const clearEnough = !second || ratio <= 0.985;
+  const endingScore=endingClassScore(feat,target);
+  const ecal=endingCalibration(target);
+  const endingPass=
+    !Number.isFinite(ecal.limit) ||
+    endingScore<=ecal.limit;
+
+  const ratio=second ? best.score/(second.score||1e-9) : 0;
+  const marginPass=!second || ratio<=.995;
 
   return {
-    correct: clearEnough,
-    best,
-    second,
-    targetObj,
-    scores,
-    ratio
+    correct:endingPass&&marginPass,
+    best,second,targetObj,scores,
+    endingScore,
+    endingLimit:ecal.limit,
+    ratio,
+    endingPass,
+    marginPass,
+    reason:endingPass ? (marginPass ? "ok" : "ambiguous") : "ending"
   };
 }
 
@@ -771,7 +855,11 @@ async function attempt(){
   if(!j.best)throw new Error("正解音声データがありません");
 
   if(DEBUG){
-    debugEl.textContent=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
+    const base=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
+    const endInfo=Number.isFinite(j.endingScore)
+      ? ` / 語尾=${j.endingScore.toFixed(3)} 上限=${Number.isFinite(j.endingLimit)?j.endingLimit.toFixed(3):"-"}`
+      : "";
+    debugEl.textContent=base+endInfo;
   }
 
   if(j.correct){
@@ -783,7 +871,13 @@ async function attempt(){
     result.textContent="×";
     result.className="result ng";
 
-    statusEl.textContent=`いちばん近い音：${j.best.key}`;
+    if(j.reason==="ending"){
+      statusEl.textContent="活用部分の音が正解と違います";
+    }else if(j.best?.key===target){
+      statusEl.textContent=`${target} に近いですが、判定があいまいです`;
+    }else{
+      statusEl.textContent=`いちばん近い音：${j.best.key}`;
+    }
 
     await sleep(850);
   }
