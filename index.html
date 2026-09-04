@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v8.0・DTW局所判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v8.2・DTW全区間判定</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -860,6 +860,153 @@ function targetLocalScore(feat,key){
   };
 }
 
+
+function alignedDistances(A,B){
+  const n=A.length,m=B.length;
+  if(!n||!m)return [];
+
+  const band=Math.max(8,Math.ceil(Math.max(n,m)*.38));
+  const W=m+1;
+  const cost=new Float64Array((n+1)*(m+1));
+  const move=new Uint8Array((n+1)*(m+1));
+  cost.fill(Infinity);
+  cost[0]=0;
+
+  for(let i=1;i<=n;i++){
+    const center=i*m/n;
+    const j0=Math.max(1,Math.floor(center-band));
+    const j1=Math.min(m,Math.ceil(center+band));
+
+    for(let j=j0;j<=j1;j++){
+      const idx=i*W+j;
+      const c=frameDistance(A[i-1],B[j-1]);
+
+      const diag=cost[(i-1)*W+(j-1)];
+      const up=cost[(i-1)*W+j];
+      const left=cost[i*W+(j-1)];
+
+      let best=diag,dir=1;
+      if(up<best){best=up;dir=2}
+      if(left<best){best=left;dir=3}
+
+      if(Number.isFinite(best)){
+        cost[idx]=best+c;
+        move[idx]=dir;
+      }
+    }
+  }
+
+  if(!Number.isFinite(cost[n*W+m]))return [];
+
+  let i=n,j=m;
+  const d=[];
+
+  while(i>0 && j>0){
+    d.push(frameDistance(A[i-1],B[j-1]));
+    const dir=move[i*W+j];
+    if(dir===1){i--;j--}
+    else if(dir===2){i--}
+    else if(dir===3){j--}
+    else break;
+  }
+
+  d.reverse();
+  return d;
+}
+
+function maxWindowAverage(arr,win){
+  if(!arr.length)return Infinity;
+  if(arr.length<=win)return arr.reduce((s,v)=>s+v,0)/arr.length;
+
+  let sum=0,max=-Infinity;
+  for(let i=0;i<arr.length;i++){
+    sum+=arr[i];
+    if(i>=win)sum-=arr[i-win];
+    if(i>=win-1)max=Math.max(max,sum/win);
+  }
+  return max;
+}
+
+function multiScaleLocalStats(A,B){
+  const d=alignedDistances(A,B);
+  if(!d.length){
+    return {short:Infinity,medium:Infinity,long:Infinity,mean:Infinity};
+  }
+
+  const mean=d.reduce((s,v)=>s+v,0)/d.length;
+
+  // 約80ms / 160ms / 300ms 相当の3段階。
+  // 1音の違い、短いまとまりの違い、語尾や語中のまとまった違いを全部見る。
+  const short=maxWindowAverage(d,8);
+  const medium=maxWindowAverage(d,16);
+  const long=maxWindowAverage(d,30);
+
+  return {short,medium,long,mean};
+}
+
+const multiCalCache={};
+
+function multiScaleCalibration(key){
+  if(multiCalCache[key])return multiCalCache[key];
+
+  const refs=templates[key]||[];
+  const vals={short:[],medium:[],long:[],mean:[]};
+
+  for(let i=0;i<refs.length;i++){
+    for(let j=i+1;j<refs.length;j++){
+      const s=multiScaleLocalStats(refs[i],refs[j]);
+      for(const k of Object.keys(vals)){
+        if(Number.isFinite(s[k]))vals[k].push(s[k]);
+      }
+    }
+  }
+
+  const makeLimit=(arr,mulMed,mulMax,floor)=>{
+    arr.sort((a,b)=>a-b);
+    if(!arr.length)return Infinity;
+    const med=arr[Math.floor(arr.length/2)];
+    const mx=arr[arr.length-1];
+    return Math.max(med*mulMed,mx*mulMax,floor);
+  };
+
+  // 固定の語尾ではなく、どこに違いがあっても同じ基準。
+  const out={
+    short:makeLimit(vals.short,1.75,1.55,0.72),
+    medium:makeLimit(vals.medium,1.70,1.50,0.62),
+    long:makeLimit(vals.long,1.65,1.45,0.55),
+    mean:makeLimit(vals.mean,1.75,1.55,0.42)
+  };
+
+  multiCalCache[key]=out;
+  return out;
+}
+
+function targetMultiScaleScore(feat,key){
+  const refs=templates[key]||[];
+  const stats=[];
+
+  for(const ref of refs){
+    const s=multiScaleLocalStats(feat,ref);
+    if(Number.isFinite(s.mean))stats.push(s);
+  }
+
+  if(!stats.length){
+    return {short:Infinity,medium:Infinity,long:Infinity,mean:Infinity};
+  }
+
+  const med=(prop)=>{
+    const a=stats.map(s=>s[prop]).sort((x,y)=>x-y);
+    return a[Math.floor(a.length/2)];
+  };
+
+  return {
+    short:med("short"),
+    medium:med("medium"),
+    long:med("long"),
+    mean:med("mean")
+  };
+}
+
 function judge(feat,target){
   const scores=classScores(feat,templates);
   if(!scores.length)return {correct:false,best:null,scores};
@@ -867,7 +1014,7 @@ function judge(feat,target){
   const best=scores[0];
   const second=scores[1]||null;
 
-  // ① 単語全体をDTWで合わせる。
+  // ① まず全体として正解音声が最も近いこと。
   if(best.key!==target){
     return {
       correct:false,best,second,scores,
@@ -875,21 +1022,24 @@ function judge(feat,target){
     };
   }
 
-  // ② DTWで対応づけた経路の中に
-  //    「一部分だけ大きく違う場所」がないかを見る。
-  const local=targetLocalScore(feat,target);
-  const cal=localCalibration(target);
+  // ② DTWで時間を合わせたあと、
+  //    最初から最後まで全区間を3つの長さでチェックする。
+  const local=targetMultiScaleScore(feat,target);
+  const cal=multiScaleCalibration(target);
 
-  const localPass=
-    !Number.isFinite(cal.limit) ||
-    local.excess<=cal.limit;
+  const shortPass = !Number.isFinite(cal.short)  || local.short<=cal.short;
+  const mediumPass= !Number.isFinite(cal.medium) || local.medium<=cal.medium;
+  const longPass   = !Number.isFinite(cal.long)   || local.long<=cal.long;
+  const meanPass   = !Number.isFinite(cal.mean)   || local.mean<=cal.mean;
+
+  const correct=shortPass&&mediumPass&&longPass&&meanPass;
 
   return {
-    correct:localPass,
+    correct,
     best,second,scores,
-    local,
-    localLimit:cal.limit,
-    reason:localPass ? "ok" : "local"
+    local,cal,
+    shortPass,mediumPass,longPass,meanPass,
+    reason:correct ? "ok" : "local"
   };
 }
 
@@ -918,10 +1068,13 @@ async function attempt(){
 
   if(DEBUG){
     const word=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
-    const localInfo=j.local
-      ? ` / 局所ズレ=${j.local.excess.toFixed(3)} 上限=${Number.isFinite(j.localLimit)?j.localLimit.toFixed(3):"-"}`
+    const li=j.local&&j.cal
+      ? ` / 80ms=${j.local.short.toFixed(2)}/${j.cal.short.toFixed(2)}`
+        +` / 160ms=${j.local.medium.toFixed(2)}/${j.cal.medium.toFixed(2)}`
+        +` / 300ms=${j.local.long.toFixed(2)}/${j.cal.long.toFixed(2)}`
+        +` / 全体=${j.local.mean.toFixed(2)}/${j.cal.mean.toFixed(2)}`
       : "";
-    debugEl.textContent=word+localInfo;
+    debugEl.textContent=word+li;
   }
 
   if(j.correct){
