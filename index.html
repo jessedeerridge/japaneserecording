@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v9.3・最寄り候補判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v10・シンプル候補判定</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -58,36 +58,12 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 
 <script>
 const ITEMS=[
-  {
-    prompt:"書きます",
-    target:"かいて",
-    candidates:["かいて","かきて","かって","かいた"]
-  },
-  {
-    prompt:"聞きます",
-    target:"きいて",
-    candidates:["きいて","ききて","きって","きいた"]
-  },
-  {
-    prompt:"読みます",
-    target:"よんで",
-    candidates:["よんで","よみて","よんて","よんだ"]
-  },
-  {
-    prompt:"飲みます",
-    target:"のんで",
-    candidates:["のんで","のみて","のんて","のんだ"]
-  },
-  {
-    prompt:"話します",
-    target:"はなして",
-    candidates:["はなして","はなしで","はなって","はなした"]
-  },
-  {
-    prompt:"食べます",
-    target:"たべて",
-    candidates:["たべて","たべって","たべで","たべた"]
-  }
+  {prompt:"書きます",target:"かいて",candidates:["かいて","かきて","かって","かいた"]},
+  {prompt:"聞きます",target:"きいて",candidates:["きいて","ききて","きって","きいた"]},
+  {prompt:"読みます",target:"よんで",candidates:["よんで","よみて","よんて","よんだ"]},
+  {prompt:"飲みます",target:"のんで",candidates:["のんで","のみて","のんて","のんだ"]},
+  {prompt:"話します",target:"はなして",candidates:["はなして","はなしで","はなって","はなした"]},
+  {prompt:"食べます",target:"たべて",candidates:["たべて","たべって","たべで","たべた"]}
 ];
 
 const $=s=>document.querySelector(s);
@@ -531,11 +507,8 @@ async function loadTemplates(){
 
   const required=[...new Set(ITEMS.flatMap(item=>item.candidates))];
   const missing=required.filter(key=>!Array.isArray(templates[key])||!templates[key].length);
-
   if(missing.length){
-    throw new Error(
-      "voice_templates.json に音声がありません: " + missing.join("、")
-    );
+    throw new Error("voice_templates.json に音声がありません: "+missing.join("、"));
   }
 }
 
@@ -1369,165 +1342,30 @@ function targetTimelineScore(feat,key){
   };
 }
 
-
-function timeNormalizeSequence(seq,bins=18){
-  if(!seq.length)return [];
-  const out=[];
-  for(let b=0;b<bins;b++){
-    let a=Math.floor(b*seq.length/bins);
-    let z=Math.floor((b+1)*seq.length/bins);
-    if(z<=a)z=Math.min(seq.length,a+1);
-    a=Math.min(seq.length-1,a);
-    z=Math.max(a+1,Math.min(seq.length,z));
-
-    const D=seq[0].length;
-    const row=new Array(D).fill(0);
-    let n=0;
-    for(let i=a;i<z;i++){
-      for(let d=0;d<D;d++)row[d]+=seq[i][d];
-      n++;
-    }
-    for(let d=0;d<D;d++)row[d]/=Math.max(1,n);
-    out.push(row);
-  }
-  return out;
-}
-
-function medianValue(arr){
-  if(!arr.length)return Infinity;
-  const a=[...arr].sort((x,y)=>x-y);
-  return a[Math.floor(a.length/2)];
-}
-
-function bestTwoAverage(arr){
-  const a=arr.filter(Number.isFinite).sort((x,y)=>x-y);
-  if(!a.length)return Infinity;
-  const take=Math.min(2,a.length);
-  let s=0;
-  for(let i=0;i<take;i++)s+=a[i];
-  return s/take;
-}
-
-function shiftedBinDistance(q,r,b){
-  let best=Infinity;
-  for(let k=Math.max(0,b-1);k<=Math.min(r.length-1,b+1);k++){
-    best=Math.min(best,frameDistance(q[b],r[k]));
-  }
-  return best;
-}
-
-const contrastWeightCache={};
-
-function contrastWeights(target,wrong,bins=18){
-  const cacheKey=target+"|"+wrong+"|"+bins;
-  if(contrastWeightCache[cacheKey])return contrastWeightCache[cacheKey];
-
-  const trefs=templates[target]||[];
-  const wrefs=templates[wrong]||[];
-  const perBin=Array.from({length:bins},()=>[]);
-
-  for(const tr of trefs){
-    const T=timeNormalizeSequence(tr,bins);
-    for(const wr of wrefs){
-      const W=timeNormalizeSequence(wr,bins);
-      if(T.length!==bins||W.length!==bins)continue;
-      for(let b=0;b<bins;b++){
-        perBin[b].push(frameDistance(T[b],W[b]));
-      }
-    }
-  }
-
-  const sep=perBin.map(a=>medianValue(a));
-  const finite=sep.filter(Number.isFinite);
-  const p60=finite.length?percentile(finite,.60):0;
-  const p80=finite.length?percentile(finite,.80):0;
-
-  // 正解と誤用で違いが大きい時間位置ほど重くする。
-  const weights=sep.map(v=>{
-    if(!Number.isFinite(v))return 1;
-    if(v>=p80)return 8;
-    if(v>=p60)return 4;
-    return 1;
-  });
-
-  contrastWeightCache[cacheKey]=weights;
-  return weights;
-}
-
-function weightedNormalizedDistance(query,ref,weights){
-  const bins=weights.length;
-  const Q=timeNormalizeSequence(query,bins);
-  const R=timeNormalizeSequence(ref,bins);
-  if(Q.length!==bins||R.length!==bins)return Infinity;
-
-  let s=0,w=0;
-  for(let b=0;b<bins;b++){
-    const d=shiftedBinDistance(Q,R,b);
-    const ww=weights[b];
-    if(Number.isFinite(d)){
-      s+=d*ww;
-      w+=ww;
-    }
-  }
-  return w?s/w:Infinity;
-}
-
-function contrastivePairScore(feat,target,wrong){
-  const bins=18;
-  const weights=contrastWeights(target,wrong,bins);
-
-  const targetScores=(templates[target]||[])
-    .map(ref=>weightedNormalizedDistance(feat,ref,weights));
-  const wrongScores=(templates[wrong]||[])
-    .map(ref=>weightedNormalizedDistance(feat,ref,weights));
-
-  const targetScore=bestTwoAverage(targetScores);
-  const wrongScore=bestTwoAverage(wrongScores);
-  const ratio=Number.isFinite(targetScore)&&Number.isFinite(wrongScore)&&wrongScore>0
-    ? targetScore/wrongScore
-    : Infinity;
-
-  return {targetScore,wrongScore,ratio,weights};
-}
-
 function judge(feat,target,candidates){
   const scores=classScores(feat,templates,candidates);
   if(!scores.length){
-    return {correct:false,best:null,nearestWrong:null,scores,reason:"nodata"};
+    return {correct:false,best:null,second:null,scores,reason:"nodata"};
   }
 
   const best=scores[0];
-  const wrongScores=scores.filter(x=>x.key!==target);
-  const nearestWrong=wrongScores[0]||null;
+  const second=scores[1]||null;
 
-  // 正解候補が1位でなければ×
+  // 1位が誤用なら×
   if(best.key!==target){
-    return {
-      correct:false,
-      best,
-      nearestWrong,
-      scores,
-      reason:"word"
-    };
+    return {correct:false,best,second,scores,reason:"wrong"};
   }
 
-  // 似た活用形では 1～数％しか差が出ないことが普通。
-  // 10%差は要求しない。
-  // ただし完全な同点に近い場合だけ「もう一度」にする。
-  const ratio=nearestWrong && Number.isFinite(nearestWrong.score) && nearestWrong.score>0
-    ? best.score/nearestWrong.score
+  // 1位が正解でも、2位との差が1%未満なら「もう一度」
+  const ratio=second && Number.isFinite(second.score) && second.score>0
+    ? best.score/second.score
     : 0;
-
-  const ambiguous=nearestWrong && ratio>0.995; // 差が0.5%未満だけ再試行
+  const ambiguous=!!(second && ratio>0.99);
 
   return {
     correct:!ambiguous,
-    best,
-    nearestWrong,
-    scores,
-    ratio,
-    ambiguous,
-    reason:ambiguous ? "ambiguous" : "ok"
+    best,second,scores,ratio,
+    reason:ambiguous ? "again" : "ok"
   };
 }
 
@@ -1554,36 +1392,29 @@ async function attempt(){
   const feat=mfccSequence(pcm);
   const j=judge(feat,target,candidates);
 
-  if(!j.best)throw new Error("正解音声データがありません");
+  if(!j.best)throw new Error("判定用音声データがありません");
 
   if(DEBUG){
     const word=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
-    const ratio=Number.isFinite(j.ratio)
-      ? ` / 正解÷最寄り誤用=${j.ratio.toFixed(3)}`
-      : "";
+    const ratio=Number.isFinite(j.ratio) ? ` / 1位÷2位=${j.ratio.toFixed(3)}` : "";
     debugEl.textContent=word+ratio;
   }
 
   if(j.correct){
     result.textContent="○";
     result.className="result ok";
+    statusEl.textContent="";
     await sleep(600);
     newQuestion();
+  }else if(j.reason==="again"){
+    result.textContent="もう一度";
+    result.className="result";
+    statusEl.textContent="正解と誤用がほぼ同じ判定でした";
+    await sleep(850);
   }else{
-    if(j.reason==="ambiguous"){
-      result.textContent="もう一度";
-      result.className="result";
-    }else{
-      result.textContent="×";
-      result.className="result ng";
-    }
-    if(j.reason==="ambiguous" && j.nearestWrong){
-      statusEl.textContent="判定がほぼ同点です。もう一度言ってください";
-    }else if(j.best){
-      statusEl.textContent=`この問題でいちばん近い音：${j.best.key}`;
-    }else{
-      statusEl.textContent="判定できませんでした";
-    }
+    result.textContent="×";
+    result.className="result ng";
+    statusEl.textContent=`いちばん近い音：${j.best.key}`;
     await sleep(850);
   }
 }
