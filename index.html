@@ -236,9 +236,12 @@ async function recordPcm(ms=1900){
 function trim(x){
   let mx=0;
   for(const v of x)mx=Math.max(mx,Math.abs(v));
-  if(mx<.006)return x;
 
-  const th=Math.max(.01,mx*.07);
+  if(mx<.012){
+    throw new Error("声が入っていません");
+  }
+
+  const th=Math.max(.014,mx*.09);
   const w=320;
 
   const rms=p=>{
@@ -250,20 +253,24 @@ function trim(x){
     return Math.sqrt(s/Math.max(1,n));
   };
 
-  let a=0,b=x.length;
+  let a=-1,b=-1;
 
   for(let p=0;p<x.length-w;p+=160){
     if(rms(p)>th){
-      a=Math.max(0,p-640);
+      a=Math.max(0,p-800);
       break;
     }
   }
 
   for(let p=x.length-w;p>0;p-=160){
     if(rms(p)>th){
-      b=Math.min(x.length,p+w+640);
+      b=Math.min(x.length,p+w+800);
       break;
     }
+  }
+
+  if(a<0 || b<0 || b-a<1800){
+    throw new Error("声をもう少しはっきり言ってください");
   }
 
   return x.slice(a,b);
@@ -383,18 +390,30 @@ function allClasses(feat){
 async function doAttempt(){
   const target=ITEMS[currentIndex][1];
 
+  // 問題を見てから話す準備時間を確保
+  recordBox.classList.remove("recording");
+  recordMain.textContent="";
+  recordSub.textContent="";
+  result.textContent="";
+  statusEl.textContent="";
+
+  await new Promise(r=>setTimeout(r,550));
+
+  // 録音開始を明確にする
   recordBox.classList.add("recording");
   recordMain.textContent=target;
   recordSub.textContent="録音中";
   result.textContent="";
   statusEl.textContent="";
 
-  const pcm=await recordPcm(1900);
-  const feat=fingerprint(pcm);
+  // 以前より長めに録音
+  const pcm=await recordPcm(2400);
 
   recordBox.classList.remove("recording");
   recordMain.textContent="";
   recordSub.textContent="";
+
+  const feat=fingerprint(pcm);
 
   const classes=allClasses(feat);
   const best=classes[0];
@@ -404,8 +423,6 @@ async function doAttempt(){
     throw new Error("この問題の正解データがありません");
   }
 
-  // 学生と先生では声質が違うので、絶対類似度は判定に使わない。
-  // 登録済みのて形の中で「いちばん近い語」が正解語なら○。
   const correct = !!best && best.key===target;
 
   if(correct){
@@ -414,7 +431,6 @@ async function doAttempt(){
 
     await new Promise(r=>setTimeout(r,550));
     newQuestion();
-    await new Promise(r=>setTimeout(r,350));
 
     return "next";
   }else{
@@ -424,7 +440,7 @@ async function doAttempt(){
     const nearest=best?.key || "";
     statusEl.textContent=nearest ? `いちばん近い音：${nearest}` : "";
 
-    await new Promise(r=>setTimeout(r,750));
+    await new Promise(r=>setTimeout(r,850));
     return "retry";
   }
 }
@@ -444,7 +460,7 @@ async function practiceLoop(){
     recordSub.textContent="";
     statusEl.textContent=e.message||String(e);
 
-    await new Promise(r=>setTimeout(r,900));
+    await new Promise(r=>setTimeout(r,700));
 
     if(started){
       running=false;
