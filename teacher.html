@@ -1,1 +1,631 @@
 
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>て形・正解音声登録（先生用）</title>
+<style>
+:root{--r:16px}
+*{box-sizing:border-box}
+body{
+  margin:0;background:#f3f4f6;color:#111;
+  font-family:system-ui,-apple-system,"Noto Sans JP","Yu Gothic",sans-serif
+}
+.wrap{width:min(720px,94vw);margin:24px auto 60px}
+.card{
+  background:#fff;border:1px solid #ddd;border-radius:20px;
+  padding:24px;box-shadow:0 5px 18px rgba(0,0,0,.06)
+}
+h1{font-size:24px;margin:0 0 6px}
+.sub{font-size:13px;color:#666;line-height:1.5;margin-bottom:18px}
+.tabs{display:flex;gap:8px;margin:0 0 18px}
+.tabs button{flex:1}
+button,select,input{
+  font:inherit
+}
+button{
+  border:0;border-radius:13px;padding:13px 17px;
+  font-size:17px;font-weight:700;cursor:pointer
+}
+button:disabled{opacity:.45;cursor:not-allowed}
+.primary{background:#111;color:#fff}
+.light{background:#e9e9e9;color:#111}
+.warn{background:#ffe4e4;color:#8a1515}
+.active{outline:3px solid #999}
+.problem{
+  min-height:130px;display:flex;align-items:center;justify-content:center;
+  font-size:52px;font-weight:800;text-align:center;
+  border:2px solid #222;border-radius:18px;margin:12px 0 16px;
+  padding:20px
+}
+.answerHint{font-size:15px;color:#666;min-height:24px;text-align:center}
+.actions{text-align:center;margin-top:12px}
+#speakBtn{min-width:220px}
+.recordBox{
+  width:min(360px,90%);
+  min-height:150px;
+  margin:16px auto 4px;
+  border:3px solid #222;
+  border-radius:18px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  cursor:pointer;
+  user-select:none;
+  background:#fff;
+  transition:.12s transform,.12s background;
+}
+.recordBox:active{transform:scale(.985)}
+.recordBox.recording{
+  background:#111;
+  color:#fff;
+  border-color:#111;
+}
+.recordBox.recording .recordSub{color:#ddd}
+.recordBox.disabled{
+  opacity:.72;
+  pointer-events:none;
+}
+.recordIcon{font-size:44px;line-height:1}
+.recordMain{font-size:21px;font-weight:800}
+.recordSub{font-size:13px;color:#666}
+.status{text-align:center;margin-top:16px;min-height:26px;font-size:17px}
+.result{text-align:center;font-size:32px;font-weight:900;min-height:46px;margin-top:7px}
+.ok{color:#087f23}.ng{color:#c62828}
+.score{text-align:center;color:#666;font-size:14px;min-height:20px}
+.panel{display:none}
+.panel.show{display:block}
+.setupRow{
+  display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;
+  padding:9px 0;border-bottom:1px solid #eee
+}
+.setupRow:last-child{border-bottom:0}
+.word{font-size:18px}
+.count{font-size:13px;color:#666;min-width:58px;text-align:center}
+.setupTop{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px
+}
+select{padding:10px;border:1px solid #bbb;border-radius:10px;background:#fff}
+.rangeRow{display:flex;align-items:center;gap:10px;margin-top:14px}
+.rangeRow input{flex:1}
+.note{
+  background:#f7f7f7;border-radius:12px;padding:12px;margin-top:14px;
+  font-size:13px;line-height:1.55;color:#555
+}
+.teacherRecBox{
+  margin:14px 0 18px;
+  min-height:130px;
+  border:3px solid #222;
+  border-radius:16px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  padding:16px;
+  text-align:center;
+}
+.teacherRecBox.recording{
+  background:#111;
+  color:#fff;
+}
+.teacherRecTitle{font-size:27px;font-weight:900}
+.teacherRecCount{font-size:16px}
+.teacherRecRecognized{font-size:15px;opacity:.85}
+
+.smallBtn{padding:9px 12px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>て形・正解音声登録（先生用）</h1>
+    <div class="sub">正解音声を登録して、学生用の voice_templates.json を作るページです。</div>
+
+    <div class="tabs">
+      <button id="setupTab" class="light active">正解音声を登録</button>
+    </div>
+
+    <section id="setupPanel" class="panel show">
+      <div class="setupTop">
+        <button id="micPermissionBtn" class="primary">最初にマイクを許可</button>
+        <button id="registerAllBtn" class="primary" disabled>自動で3回ずつ登録</button>
+        <button id="exportBtn" class="light">JSONを書き出す</button>
+        <button id="clearBtn" class="warn smallBtn">登録を全部消す</button>
+      </div>
+
+      <div id="teacherRecBox" class="teacherRecBox">
+        <div id="teacherRecTitle" class="teacherRecTitle">録音待機中</div>
+        <div id="teacherRecCount" class="teacherRecCount"></div>
+        <div id="teacherRecRecognized" class="teacherRecRecognized">認識結果：―</div>
+      </div>
+
+      <div id="setupList"></div>
+
+      <div class="rangeRow">
+        <span>判定</span>
+        <input id="threshold" type="range" min="35" max="85" value="60">
+        <strong id="thresholdLabel">60</strong>
+      </div>
+      <div class="note">
+        ①「自動で3回ずつ登録」で正解音声を録音します。<br>
+        ② 各語が3回成功すると、自動で次の語へ進みます。<br>
+        ③ 最後に「JSONを書き出す」を押します。<br>
+        ④ 保存された <b>voice_templates.json</b> をGitHubに置きます。
+      </div>
+    </section>
+  </div>
+</div>
+
+
+<script>
+const ITEMS = [
+  ["書きます","書いて","かいて"],
+  ["聞きます","聞いて","きいて"],
+  ["読みます","読んで","よんで"],
+  ["飲みます","飲んで","のんで"],
+  ["話します","話して","はなして"],
+  ["食べます","食べて","たべて"],
+  ["見ます","見て","みて"],
+  ["起きます","起きて","おきて"],
+  ["寝ます","寝て","ねて"],
+  ["行きます","行って","いって"],
+  ["買います","買って","かって"],
+  ["待ちます","待って","まって"],
+  ["遊びます","遊んで","あそんで"],
+  ["泳ぎます","泳いで","およいで"],
+  ["します","して","して"],
+  ["来ます","来て","きて"]
+];
+
+const $ = s => document.querySelector(s);
+const setupTab=$("#setupTab");
+const setupPanel=$("#setupPanel");
+const setupList=$("#setupList"), registerAllBtn=$("#registerAllBtn"),
+      exportBtn=$("#exportBtn"), clearBtn=$("#clearBtn"),
+      micPermissionBtn=$("#micPermissionBtn");
+const teacherRecBox=$("#teacherRecBox");
+const teacherRecTitle=$("#teacherRecTitle");
+const teacherRecCount=$("#teacherRecCount");
+const teacherRecRecognized=$("#teacherRecRecognized");
+const threshold=$("#threshold"), thresholdLabel=$("#thresholdLabel");
+
+let currentIndex=0;
+let mediaStream=null, recorder=null, chunks=[];
+let batchMode=false, batchIndex=0;
+let micReady=false;
+let autoStarting=false;
+
+const STORE_KEY="teform_voice_templates_v1";
+const THRESHOLD_KEY="teform_threshold_v1";
+
+function loadTemplates(){
+  try{return JSON.parse(localStorage.getItem(STORE_KEY)||"{}")}catch{return {}}
+}
+function saveTemplates(x){ localStorage.setItem(STORE_KEY,JSON.stringify(x)); }
+let templates=loadTemplates();
+
+const savedThreshold=localStorage.getItem(THRESHOLD_KEY);
+if(savedThreshold) threshold.value=savedThreshold;
+thresholdLabel.textContent=threshold.value;
+
+threshold.oninput=()=>{
+  thresholdLabel.textContent=threshold.value;
+  localStorage.setItem(THRESHOLD_KEY,threshold.value);
+};
+
+
+function renderSetup(){
+  setupList.innerHTML="";
+  ITEMS.forEach((it,i)=>{
+    const row=document.createElement("div");
+    row.className="setupRow";
+    const num=(templates[it[2]]||[]).length;
+    row.innerHTML=`
+      <div class="word">${it[0]} → ${it[1]}</div>
+      <div class="count">${num}回</div>
+      <button class="light smallBtn" data-i="${i}">録音</button>`;
+    setupList.appendChild(row);
+  });
+  setupList.querySelectorAll("button[data-i]").forEach(btn=>{
+    btn.onclick=()=>recordReference(Number(btn.dataset.i));
+  });
+}
+
+async function getMic(){
+  if(mediaStream && mediaStream.active) return mediaStream;
+
+  mediaStream=await navigator.mediaDevices.getUserMedia({
+    audio:{
+      echoCancellation:true,
+      noiseSuppression:true,
+      autoGainControl:true,
+      channelCount:1
+    }
+  });
+
+  micReady=true;
+
+  // ページを閉じるまでマイク接続を維持するので、
+  // 以後の録音では再許可を求めません。
+  return mediaStream;
+}
+
+async function recordBlob(ms=1800){
+  const stream=await getMic();
+  chunks=[];
+  const preferred = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus" : "";
+  recorder=new MediaRecorder(stream, preferred?{mimeType:preferred}:undefined);
+
+  return new Promise((resolve,reject)=>{
+    recorder.ondataavailable=e=>{if(e.data.size) chunks.push(e.data)};
+    recorder.onerror=e=>reject(e.error||e);
+    recorder.onstop=()=>{
+      resolve(new Blob(chunks,{type:recorder.mimeType||"audio/webm"}));
+    };
+    recorder.start();
+    setTimeout(()=>{if(recorder.state==="recording") recorder.stop()},ms);
+  });
+}
+
+async function decodeMono(blob){
+  const arr=await blob.arrayBuffer();
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const buf=await ctx.decodeAudioData(arr);
+  const src=buf.getChannelData(0);
+  const rate=buf.sampleRate;
+  const target=16000;
+  if(rate===target){await ctx.close();return src.slice()}
+  const len=Math.max(1,Math.round(src.length*target/rate));
+  const out=new Float32Array(len);
+  for(let i=0;i<len;i++){
+    const p=i*(rate/target);
+    const a=Math.floor(p), b=Math.min(src.length-1,a+1), t=p-a;
+    out[i]=src[a]*(1-t)+src[b]*t;
+  }
+  await ctx.close();
+  return out;
+}
+
+function trimSilence(x){
+  let max=0;
+  for(const v of x) max=Math.max(max,Math.abs(v));
+  if(max<0.008) return x;
+  const th=Math.max(0.012,max*0.08);
+  const win=320;
+  let start=0,end=x.length;
+  function rmsAt(pos){
+    let s=0,n=0;
+    for(let i=pos;i<Math.min(x.length,pos+win);i++){s+=x[i]*x[i];n++}
+    return Math.sqrt(s/Math.max(1,n));
+  }
+  for(let p=0;p<x.length-win;p+=160){if(rmsAt(p)>th){start=Math.max(0,p-800);break}}
+  for(let p=x.length-win;p>0;p-=160){if(rmsAt(p)>th){end=Math.min(x.length,p+win+800);break}}
+  return x.slice(start,end);
+}
+
+// 軽量なスペクトル特徴。FFTライブラリもAIモデルも不要。
+function fingerprint(x){
+  x=trimSilence(x);
+  const frames=28, bands=18, N=256;
+  const minSamples=1600;
+  if(x.length<minSamples) throw new Error("声が短すぎます");
+  const feat=[];
+  const maxStart=Math.max(0,x.length-N-1);
+
+  for(let f=0;f<frames;f++){
+    const center=(f+.5)/frames;
+    const start=Math.max(0,Math.min(maxStart,Math.floor(center*x.length-N/2)));
+    const row=new Array(bands).fill(0);
+
+    // Hann窓 + バンドごとのGoertzel風の簡易スペクトル計算
+    for(let b=0;b<bands;b++){
+      const freq=180*Math.pow(4200/180,b/(bands-1));
+      const w=2*Math.PI*freq/16000;
+      let re=0,im=0;
+      for(let n=0;n<N;n++){
+        const sample=x[start+n]||0;
+        const win=0.5-0.5*Math.cos(2*Math.PI*n/(N-1));
+        const v=sample*win;
+        re+=v*Math.cos(w*n);
+        im-=v*Math.sin(w*n);
+      }
+      row[b]=Math.log(1e-7+re*re+im*im);
+    }
+
+    // フレーム内の音量差を消す
+    const mean=row.reduce((a,b)=>a+b,0)/bands;
+    let ss=0;
+    for(let b=0;b<bands;b++){row[b]-=mean;ss+=row[b]*row[b]}
+    const sd=Math.sqrt(ss/bands)||1;
+    for(let b=0;b<bands;b++) row[b]/=sd;
+    feat.push(row);
+  }
+  return feat;
+}
+
+function frameDist(a,b){
+  let s=0;
+  for(let i=0;i<a.length;i++){
+    const d=a[i]-b[i]; s+=d*d;
+  }
+  return Math.sqrt(s/a.length);
+}
+
+function dtw(A,B){
+  const n=A.length,m=B.length;
+  const prev=new Float64Array(m+1); prev.fill(Infinity); prev[0]=0;
+  for(let i=1;i<=n;i++){
+    const cur=new Float64Array(m+1); cur.fill(Infinity);
+    for(let j=1;j<=m;j++){
+      const cost=frameDist(A[i-1],B[j-1]);
+      cur[j]=cost+Math.min(cur[j-1],prev[j],prev[j-1]);
+    }
+    prev.set(cur);
+  }
+  return prev[m]/(n+m);
+}
+
+function similarity(dist){
+  // 経験的な表示用スコア。判定自体は近いクラス比較も併用。
+  return Math.max(0,Math.min(100,Math.round(100*(1-dist/0.85))));
+}
+
+async function blobToFeature(blob){
+  const pcm=await decodeMono(blob);
+  return fingerprint(pcm);
+}
+
+
+let speechRec = null;
+let speechRecognizedText = "";
+let speechRecRunning = false;
+
+function initSpeechRecognition(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){
+    teacherRecRecognized.textContent = "認識結果：このブラウザは音声認識非対応";
+    return false;
+  }
+  if(speechRec) return true;
+
+  speechRec = new SR();
+  speechRec.lang = "ja-JP";
+  speechRec.interimResults = true;
+  speechRec.continuous = false;
+  speechRec.maxAlternatives = 3;
+
+  speechRec.onstart = ()=>{ speechRecRunning = true; };
+
+  speechRec.onresult = (e)=>{
+    let best = "";
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i] && e.results[i][0]){
+        const t=e.results[i][0].transcript.trim();
+        if(t) best=t;
+      }
+    }
+    if(best){
+      speechRecognizedText = best;
+      teacherRecRecognized.textContent = "認識結果：" + speechRecognizedText;
+    }
+  };
+
+  speechRec.onerror = (e)=>{
+    if(e.error !== "no-speech" && e.error !== "aborted"){
+      teacherRecRecognized.textContent = "認識結果：エラー (" + e.error + ")";
+    }
+  };
+
+  speechRec.onend = ()=>{ speechRecRunning = false; };
+
+  return true;
+}
+
+async function startRecognitionForThisRecording(){
+  if(!initSpeechRecognition()) return false;
+
+  speechRecognizedText = "";
+  teacherRecRecognized.textContent = "認識結果：認識中…";
+
+  if(speechRecRunning){
+    try{ speechRec.abort(); }catch{}
+    await new Promise(r=>setTimeout(r,120));
+  }
+
+  try{
+    speechRec.start();
+    // 音声認識が立ち上がる前に話し始めて取りこぼすのを防ぐ
+    await new Promise(r=>setTimeout(r,300));
+    return true;
+  }catch(e){
+    teacherRecRecognized.textContent = "認識結果：開始できませんでした";
+    return false;
+  }
+}
+
+function stopRecognitionForThisRecording(){
+  try{
+    if(speechRecRunning) speechRec.stop();
+  }catch{}
+}
+
+function normalizeRecognizedText(s){
+  return (s||"")
+    .trim()
+    .replace(/[、。！？!?,.\s「」『』]/g,"")
+    .replace(/[ァ-ヶ]/g, ch => String.fromCharCode(ch.charCodeAt(0)-0x60));
+}
+
+async function recordReference(i){
+  try{
+    if(!micReady){
+      alert("最初に「マイクを許可」を押してください。");
+      return;
+    }
+
+    const it=ITEMS[i];
+    const key=it[2];
+
+    if(batchMode && (templates[key]||[]).length >= 3){
+      batchIndex++;
+      if(batchIndex<ITEMS.length){
+        setTimeout(()=>recordReference(batchIndex),300);
+      }else{
+        batchMode=false;
+        registerAllBtn.disabled=false;
+        registerAllBtn.textContent="自動で3回ずつ登録";
+        teacherRecTitle.textContent="すべて3回ずつ登録完了";
+        teacherRecCount.textContent="";
+      }
+      return;
+    }
+
+    const currentCount=(templates[key]||[]).length + 1;
+
+    teacherRecBox.classList.add("recording");
+    teacherRecTitle.textContent=it[1];
+    teacherRecCount.textContent=`録音中　${currentCount}回目`;
+    await startRecognitionForThisRecording();
+
+    const blob=await recordBlob(2300);
+    await new Promise(r=>setTimeout(r,250));
+    stopRecognitionForThisRecording();
+
+    // 音声認識結果が正解と一致しない場合は登録しない
+    const recognized = normalizeRecognizedText(speechRecognizedText);
+    const expectedKanji = normalizeRecognizedText(it[1]);
+    const expectedKana = normalizeRecognizedText(it[2]);
+
+    const recognizedOK =
+      recognized === expectedKanji ||
+      recognized === expectedKana;
+
+    if(!recognizedOK){
+      teacherRecBox.classList.remove("recording");
+      teacherRecTitle.textContent="登録しませんでした";
+      teacherRecCount.textContent=`正解：${it[1]} ／ 認識：${speechRecognizedText || "認識できませんでした"}`;
+      teacherRecRecognized.textContent=`認識結果：${speechRecognizedText || "認識できませんでした"}`;
+
+      // バッチ中なら同じ語をもう一度
+      if(batchMode){
+        setTimeout(()=>recordReference(i),900);
+      }
+      return;
+    }
+
+    const feat=await blobToFeature(blob);
+    templates[key]=templates[key]||[];
+    templates[key].push(feat);
+    if(templates[key].length>5) templates[key].shift();
+    saveTemplates(templates);
+
+    teacherRecBox.classList.remove("recording");
+    teacherRecTitle.textContent=`${it[1]}　録音完了`;
+    teacherRecCount.textContent=`登録済み ${(templates[key]||[]).length}回`;
+
+    renderSetup();
+
+    if(batchMode){
+      const successCount=(templates[key]||[]).length;
+
+      if(successCount < 3){
+        teacherRecTitle.textContent=`${it[1]}　${successCount}/3 成功`;
+        teacherRecCount.textContent="同じ語をもう一度録音します";
+        setTimeout(()=>recordReference(i),700);
+      }else{
+        batchIndex++;
+        if(batchIndex<ITEMS.length){
+          teacherRecTitle.textContent=`${it[1]}　3/3 完了`;
+          teacherRecCount.textContent="次の語へ進みます";
+          setTimeout(()=>recordReference(batchIndex),700);
+        }else{
+          batchMode=false;
+          registerAllBtn.disabled=false;
+          registerAllBtn.textContent="自動で3回ずつ登録";
+          teacherRecTitle.textContent="すべて3回ずつ登録完了";
+          teacherRecCount.textContent="";
+        }
+      }
+    }
+  }catch(e){
+    teacherRecBox.classList.remove("recording");
+    teacherRecTitle.textContent="録音エラー";
+    teacherRecCount.textContent="";
+    batchMode=false;
+    registerAllBtn.disabled=false;
+    registerAllBtn.textContent="自動で3回ずつ登録";
+    alert("録音できませんでした: "+(e.message||e));
+  }
+}
+
+
+micPermissionBtn.onclick=async()=>{
+  try{
+    micPermissionBtn.disabled=true;
+    micPermissionBtn.textContent="マイク確認中…";
+
+    await getMic();
+    initSpeechRecognition();
+
+    micPermissionBtn.textContent="マイク許可済み";
+    registerAllBtn.disabled=false;
+
+    teacherRecTitle.textContent="マイク準備OK";
+    teacherRecCount.textContent="これ以降は同じマイク接続を使います";
+    teacherRecRecognized.textContent="認識結果：―";
+  }catch(e){
+    micPermissionBtn.disabled=false;
+    micPermissionBtn.textContent="最初にマイクを許可";
+    teacherRecTitle.textContent="マイクを許可できませんでした";
+    teacherRecCount.textContent="";
+    alert("マイクを許可してください。");
+  }
+};
+
+registerAllBtn.onclick=()=>{
+  batchMode=true;batchIndex=0;
+  registerAllBtn.disabled=true;
+  registerAllBtn.textContent="自動登録中…";
+  recordReference(0);
+};
+
+
+exportBtn.onclick=()=>{
+  if(Object.keys(templates).length===0){
+    alert("先に正解音声を登録してください。");
+    return;
+  }
+
+  const data = {
+    version: 1,
+    threshold: Number(threshold.value),
+    createdAt: new Date().toISOString(),
+    templates
+  };
+
+  const blob = new Blob([JSON.stringify(data)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "voice_templates.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+
+clearBtn.onclick=()=>{
+  if(confirm("登録した正解音声データを全部消しますか？")){
+    templates={};saveTemplates(templates);renderSetup();
+  }
+};
+
+
+renderSetup();
+</script>
+</body>
+</html>
