@@ -13,6 +13,10 @@ h1{font-size:23px;margin:0 0 8px}.sub{font-size:13px;color:#666;margin-bottom:18
 .problem{font-size:54px;font-weight:900;min-height:110px;display:flex;align-items:center;justify-content:center;border:2px solid #222;border-radius:18px;margin-bottom:16px}
 .recordBox{min-height:155px;border:3px solid #111;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;transition:background .15s,color .15s}
 .recordBox.recording{background:#111;color:#fff}.recordMain{font-size:28px;font-weight:900}.recordSub{font-size:15px;margin-top:7px}
+.meter{width:min(310px,86%);height:11px;border:1px solid currentColor;border-radius:999px;margin-top:14px;overflow:hidden;display:none}
+.recordBox.recording .meter{display:block}
+.meterFill{height:100%;width:0;background:currentColor}
+.captureInfo{min-height:18px;margin-top:5px;font-size:11px;color:#999}
 .result{min-height:44px;margin-top:14px;font-size:30px;font-weight:900}.ok{color:#087f23}.ng{color:#c62828}
 .status{min-height:22px;margin-top:8px;font-size:14px;color:#666}
 button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:700;cursor:pointer}.primary{background:#111;color:#fff}.hidden{display:none}
@@ -22,14 +26,16 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.1</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.2・常時マイク接続</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
 <div id="recordSub" class="recordSub"></div>
+<div class="meter"><div id="meterFill" class="meterFill"></div></div>
 </div>
 <div id="result" class="result"></div>
 <div id="status" class="status"></div>
+<div id="captureInfo" class="captureInfo"></div>
 <div id="debug" class="debug"></div>
 <button id="startBtn" class="primary hidden">開始</button>
 </div></div>
@@ -47,13 +53,17 @@ const ITEMS=[
 const $=s=>document.querySelector(s);
 const problem=$("#problem"),recordBox=$("#recordBox"),recordMain=$("#recordMain"),
 recordSub=$("#recordSub"),result=$("#result"),statusEl=$("#status"),
-startBtn=$("#startBtn"),debugEl=$("#debug");
+startBtn=$("#startBtn"),debugEl=$("#debug"),meterFill=$("#meterFill"),
+captureInfo=$("#captureInfo");
 
 const DEBUG=new URLSearchParams(location.search).get("debug")==="1";
 if(DEBUG)debugEl.classList.add("show");
 
 let templates={},calibration={};
-let stream=null,audioCtx=null;
+let stream=null,track=null,audioCtx=null,sourceNode=null,analyserNode=null;
+let processorNode=null,sinkNode=null,meterRAF=0;
+let captureActive=false,captureParts=[],capturePeak=0,captureCallbacks=0;
+let micReady=false;
 let currentIndex=0,started=false,running=false;
 
 
@@ -476,41 +486,145 @@ async function loadTemplates(){
 }
 
 async function ensureMic(){
-  if(stream&&stream.active)return;
+  if(
+    micReady &&
+    stream?.active &&
+    track?.readyState==="live" &&
+    audioCtx &&
+    processorNode
+  ){
+    if(audioCtx.state==="suspended")await audioCtx.resume();
+    return;
+  }
+
+  // 古い回路が残っていたら完全に閉じる。
+  try{cancelAnimationFrame(meterRAF)}catch{}
+  try{sourceNode?.disconnect()}catch{}
+  try{analyserNode?.disconnect()}catch{}
+  try{processorNode?.disconnect()}catch{}
+  try{sinkNode?.disconnect()}catch{}
+  try{stream?.getTracks().forEach(t=>t.stop())}catch{}
+  try{await audioCtx?.close()}catch{}
 
   stream=await navigator.mediaDevices.getUserMedia({
-    audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},
+    audio:{
+      echoCancellation:true,
+      noiseSuppression:true,
+      autoGainControl:true,
+      channelCount:1
+    },
     video:false
   });
 
+  track=stream.getAudioTracks()[0];
+  if(!track)throw new Error("マイクを取得できません");
+
+  track.enabled=true;
+
   audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state==="suspended")await audioCtx.resume();
+
+  // ここで1回だけ音声回路を作る。
+  // 録音のたびに作成・切断しない。
+  sourceNode=audioCtx.createMediaStreamSource(stream);
+  analyserNode=audioCtx.createAnalyser();
+  analyserNode.fftSize=1024;
+  analyserNode.smoothingTimeConstant=.08;
+
+  processorNode=audioCtx.createScriptProcessor(2048,1,1);
+  sinkNode=audioCtx.createGain();
+
+  // 0にすると一部環境で処理が止まることがあるため極小値。
+  sinkNode.gain.value=.000001;
+
+  sourceNode.connect(analyserNode);
+  analyserNode.connect(processorNode);
+  processorNode.connect(sinkNode);
+  sinkNode.connect(audioCtx.destination);
+
+  processorNode.onaudioprocess=e=>{
+    const ch=e.inputBuffer.getChannelData(0);
+
+    if(!captureActive)return;
+
+    captureCallbacks++;
+
+    const copy=new Float32Array(ch.length);
+    copy.set(ch);
+    captureParts.push(copy);
+
+    for(let i=0;i<ch.length;i++){
+      const a=Math.abs(ch[i]);
+      if(a>capturePeak)capturePeak=a;
+    }
+  };
+
+  // メーターも同じ音声回路から読む。
+  const meterBuf=new Float32Array(analyserNode.fftSize);
+  const drawMeter=()=>{
+    if(!analyserNode)return;
+
+    analyserNode.getFloatTimeDomainData(meterBuf);
+
+    let peak=0;
+    for(let i=0;i<meterBuf.length;i++){
+      const a=Math.abs(meterBuf[i]);
+      if(a>peak)peak=a;
+    }
+
+    const pct=Math.min(100,Math.round(Math.sqrt(peak)*180));
+    meterFill.style.width=pct+"%";
+
+    meterRAF=requestAnimationFrame(drawMeter);
+  };
+  drawMeter();
+
+  micReady=true;
+
+  // マイク・AudioContext起動直後の無音フレームを録音しない。
+  await sleep(350);
 }
 
 async function capture(ms=1900){
   await ensureMic();
-  if(audioCtx.state==="suspended")await audioCtx.resume();
 
-  const src=audioCtx.createMediaStreamSource(stream);
-  const proc=audioCtx.createScriptProcessor(2048,1,1);
-  const sink=audioCtx.createGain();
-  sink.gain.value=.000001;
-  const parts=[];
+  if(audioCtx.state==="suspended"){
+    await audioCtx.resume();
+    await sleep(120);
+  }
 
-  proc.onaudioprocess=e=>parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  captureParts=[];
+  capturePeak=0;
+  captureCallbacks=0;
+  captureActive=true;
 
-  src.connect(proc);proc.connect(sink);sink.connect(audioCtx.destination);
   await sleep(ms);
-  try{src.disconnect(proc)}catch{}
-  try{proc.disconnect()}catch{}
-  try{sink.disconnect()}catch{}
 
-  const total=parts.reduce((n,a)=>n+a.length,0);
+  captureActive=false;
+
+  const total=captureParts.reduce((n,a)=>n+a.length,0);
   const raw=new Float32Array(total);
-  let p=0;
-  for(const a of parts){raw.set(a,p);p+=a.length}
 
-  if(!raw.length)throw new Error("録音できませんでした");
+  let p=0;
+  for(const a of captureParts){
+    raw.set(a,p);
+    p+=a.length;
+  }
+
+  captureInfo.textContent=
+    `マイク入力 ${capturePeak.toFixed(4)} / `+
+    `${captureCallbacks}フレーム / ${raw.length} samples`;
+
+  if(captureCallbacks===0 || raw.length===0){
+    throw new Error("マイク音声が録音処理まで届いていません");
+  }
+
+  // 完全な0だけは録音されていない。
+  // 小さい声はここでは弾かず、そのまま特徴抽出へ渡す。
+  if(capturePeak<0.0000001){
+    throw new Error("マイク入力が0です");
+  }
+
   return resample(raw,audioCtx.sampleRate,TARGET_SR);
 }
 
@@ -637,6 +751,13 @@ startBtn.onclick=async()=>{
     statusEl.textContent=e.message||String(e);
   }
 };
+
+window.addEventListener("beforeunload",()=>{
+  captureActive=false;
+  try{cancelAnimationFrame(meterRAF)}catch{}
+  try{stream?.getTracks().forEach(t=>t.stop())}catch{}
+  try{audioCtx?.close()}catch{}
+});
 
 (async()=>{
   try{
