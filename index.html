@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v8.4・正解時間軸判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v9.0・問題別候補判定</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -58,12 +58,36 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 
 <script>
 const ITEMS=[
-["書きます","かいて"],
-["聞きます","きいて"],
-["読みます","よんで"],
-["飲みます","のんで"],
-["話します","はなして"],
-["食べます","たべて"]
+  {
+    prompt:"書きます",
+    target:"かいて",
+    candidates:["かいて","かきて","かって","かいた"]
+  },
+  {
+    prompt:"聞きます",
+    target:"きいて",
+    candidates:["きいて","ききて","きって","きいた"]
+  },
+  {
+    prompt:"読みます",
+    target:"よんで",
+    candidates:["よんで","よみて","よんて","よんだ"]
+  },
+  {
+    prompt:"飲みます",
+    target:"のんで",
+    candidates:["のんで","のみて","のんて","のんだ"]
+  },
+  {
+    prompt:"話します",
+    target:"はなして",
+    candidates:["はなして","はなしで","はなって","はなした"]
+  },
+  {
+    prompt:"食べます",
+    target:"たべて",
+    candidates:["たべて","たべって","たべで","たべた"]
+  }
 ];
 
 const $=s=>document.querySelector(s);
@@ -418,10 +442,14 @@ function dtw(A,B){
   return prev[m]/Math.max(1,prevLen[m]);
 }
 
-function classScores(feat,templates){
+function classScores(feat,templates,candidateKeys=null){
   const scores=[];
+  const keys=Array.isArray(candidateKeys)&&candidateKeys.length
+    ? candidateKeys
+    : Object.keys(templates);
 
-  for(const [key,refs] of Object.entries(templates)){
+  for(const key of keys){
+    const refs=templates[key];
     if(!Array.isArray(refs)||!refs.length)continue;
 
     const ds=[];
@@ -500,6 +528,15 @@ async function loadTemplates(){
 
   templates=data.templates||{};
   calibration=data.calibration||{};
+
+  const required=[...new Set(ITEMS.flatMap(item=>item.candidates))];
+  const missing=required.filter(key=>!Array.isArray(templates[key])||!templates[key].length);
+
+  if(missing.length){
+    throw new Error(
+      "voice_templates.json に音声がありません: " + missing.join("、")
+    );
+  }
 }
 
 
@@ -714,7 +751,7 @@ function newQuestion(){
   while(n===currentIndex&&ITEMS.length>1);
 
   currentIndex=n;
-  problem.textContent=ITEMS[n][0];
+  problem.textContent=ITEMS[n].prompt;
   result.textContent="";
   statusEl.textContent="";
 }
@@ -1332,8 +1369,8 @@ function targetTimelineScore(feat,key){
   };
 }
 
-function judge(feat,target){
-  const scores=classScores(feat,templates);
+function judge(feat,target,candidates){
+  const scores=classScores(feat,templates,candidates);
   if(!scores.length)return {correct:false,best:null,scores};
 
   const best=scores[0];
@@ -1385,7 +1422,9 @@ function judge(feat,target){
 }
 
 async function attempt(){
-  const target=ITEMS[currentIndex][1];
+  const item=ITEMS[currentIndex];
+  const target=item.target;
+  const candidates=item.candidates;
 
   result.textContent="";
   statusEl.textContent="";
@@ -1403,7 +1442,7 @@ async function attempt(){
   recordSub.textContent="";
 
   const feat=mfccSequence(pcm);
-  const j=judge(feat,target);
+  const j=judge(feat,target,candidates);
 
   if(!j.best)throw new Error("正解音声データがありません");
 
@@ -1428,7 +1467,7 @@ async function attempt(){
       const ok=j.timeline.good.filter(Boolean).length;
       statusEl.textContent=`正解音声との一致 ${ok}/${j.timeline.bins} 区間`;
     }else{
-      statusEl.textContent=`いちばん近い音：${j.best.key}`;
+      statusEl.textContent=`この問題でいちばん近い音：${j.best.key}`;
     }
     await sleep(850);
   }
