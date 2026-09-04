@@ -21,12 +21,18 @@ h1{font-size:23px;margin:0 0 8px}.sub{font-size:13px;color:#666;margin-bottom:18
 .status{min-height:22px;margin-top:8px;font-size:14px;color:#666}
 button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:700;cursor:pointer}.primary{background:#111;color:#fff}.hidden{display:none}
 .debug{display:none;margin-top:7px;font-size:11px;color:#888}.debug.show{display:block}
+.micPanel{margin-top:12px;padding:12px;border:1px solid #ccc;border-radius:12px;background:#fafafa;text-align:left}
+.micPanel label{font-size:12px;color:#666}
+.micRow{display:flex;gap:8px;margin-top:6px}
+.micRow select{flex:1;min-width:0;padding:9px;border:1px solid #aaa;border-radius:9px;background:white}
+.micRow button{padding:9px 12px;font-size:14px;background:#e9e9e9;color:#111}
+.tech{margin-top:6px;font-size:11px;color:#888;word-break:break-word}
 </style>
 </head>
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.2・常時マイク接続</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.3・録音回路復旧</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -37,6 +43,16 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <div id="status" class="status"></div>
 <div id="captureInfo" class="captureInfo"></div>
 <div id="debug" class="debug"></div>
+
+<div id="micPanel" class="micPanel">
+  <label>使用するマイク</label>
+  <div class="micRow">
+    <select id="micSelect"></select>
+    <button id="changeMic" type="button">変更</button>
+  </div>
+  <div id="tech" class="tech"></div>
+</div>
+
 <button id="startBtn" class="primary hidden">開始</button>
 </div></div>
 
@@ -54,15 +70,16 @@ const $=s=>document.querySelector(s);
 const problem=$("#problem"),recordBox=$("#recordBox"),recordMain=$("#recordMain"),
 recordSub=$("#recordSub"),result=$("#result"),statusEl=$("#status"),
 startBtn=$("#startBtn"),debugEl=$("#debug"),meterFill=$("#meterFill"),
-captureInfo=$("#captureInfo");
+captureInfo=$("#captureInfo"),micSelect=$("#micSelect"),
+changeMic=$("#changeMic"),tech=$("#tech");
 
 const DEBUG=new URLSearchParams(location.search).get("debug")==="1";
 if(DEBUG)debugEl.classList.add("show");
 
 let templates={},calibration={};
-let stream=null,track=null,audioCtx=null,sourceNode=null,analyserNode=null;
-let processorNode=null,sinkNode=null,meterRAF=0;
-let captureActive=false,captureParts=[],capturePeak=0,captureCallbacks=0;
+let stream=null,track=null,audioCtx=null,sourceNode=null,analyserNode=null,monitorGain=null;
+let meterRAF=0;
+let devices=[];
 let micReady=false;
 let currentIndex=0,started=false,running=false;
 
@@ -485,38 +502,81 @@ async function loadTemplates(){
   calibration=data.calibration||{};
 }
 
-async function ensureMic(){
-  if(
-    micReady &&
-    stream?.active &&
-    track?.readyState==="live" &&
-    audioCtx &&
-    processorNode
-  ){
-    if(audioCtx.state==="suspended")await audioCtx.resume();
-    return;
-  }
 
-  // 古い回路が残っていたら完全に閉じる。
+function stopMic(){
   try{cancelAnimationFrame(meterRAF)}catch{}
   try{sourceNode?.disconnect()}catch{}
   try{analyserNode?.disconnect()}catch{}
-  try{processorNode?.disconnect()}catch{}
-  try{sinkNode?.disconnect()}catch{}
+  try{monitorGain?.disconnect()}catch{}
   try{stream?.getTracks().forEach(t=>t.stop())}catch{}
-  try{await audioCtx?.close()}catch{}
+  try{audioCtx?.close()}catch{}
 
-  stream=await navigator.mediaDevices.getUserMedia({
-    audio:{
-      echoCancellation:true,
-      noiseSuppression:true,
-      autoGainControl:true,
-      channelCount:1
-    },
-    video:false
+  stream=track=audioCtx=sourceNode=analyserNode=monitorGain=null;
+  micReady=false;
+  meterFill.style.width="0%";
+}
+
+async function refreshDevices(){
+  const all=await navigator.mediaDevices.enumerateDevices();
+  devices=all.filter(d=>d.kind==="audioinput");
+
+  const previous=micSelect.value;
+  micSelect.innerHTML="";
+
+  devices.forEach((d,i)=>{
+    const op=document.createElement("option");
+    op.value=d.deviceId;
+    op.textContent=d.label||`マイク ${i+1}`;
+    micSelect.appendChild(op);
   });
 
+  if(previous && devices.some(d=>d.deviceId===previous)){
+    micSelect.value=previous;
+  }
+}
+
+function startMeter(){
+  cancelAnimationFrame(meterRAF);
+  if(!analyserNode)return;
+
+  const buf=new Float32Array(analyserNode.fftSize);
+
+  const tick=()=>{
+    if(!analyserNode)return;
+
+    analyserNode.getFloatTimeDomainData(buf);
+
+    let peak=0;
+    for(let i=0;i<buf.length;i++){
+      const a=Math.abs(buf[i]);
+      if(a>peak)peak=a;
+    }
+
+    const pct=Math.min(100,Math.round(Math.sqrt(peak)*180));
+    meterFill.style.width=pct+"%";
+    meterRAF=requestAnimationFrame(tick);
+  };
+
+  tick();
+}
+
+async function openMic(deviceId=null){
+  stopMic();
+
+  // v6で追加した音声処理の強制指定をやめる。
+  // 実際に録音できた版と同じく、ブラウザに素のマイクを要求する。
+  let constraints={audio:true,video:false};
+
+  if(deviceId){
+    constraints={
+      video:false,
+      audio:{deviceId:{exact:deviceId}}
+    };
+  }
+
+  stream=await navigator.mediaDevices.getUserMedia(constraints);
   track=stream.getAudioTracks()[0];
+
   if(!track)throw new Error("マイクを取得できません");
 
   track.enabled=true;
@@ -524,105 +584,125 @@ async function ensureMic(){
   audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state==="suspended")await audioCtx.resume();
 
-  // ここで1回だけ音声回路を作る。
-  // 録音のたびに作成・切断しない。
   sourceNode=audioCtx.createMediaStreamSource(stream);
+
+  // 常時監視はメーターだけ。
   analyserNode=audioCtx.createAnalyser();
   analyserNode.fftSize=1024;
-  analyserNode.smoothingTimeConstant=.08;
+  analyserNode.smoothingTimeConstant=.10;
 
-  processorNode=audioCtx.createScriptProcessor(2048,1,1);
-  sinkNode=audioCtx.createGain();
-
-  // 0にすると一部環境で処理が止まることがあるため極小値。
-  sinkNode.gain.value=.000001;
+  monitorGain=audioCtx.createGain();
+  monitorGain.gain.value=.000001;
 
   sourceNode.connect(analyserNode);
-  analyserNode.connect(processorNode);
-  processorNode.connect(sinkNode);
-  sinkNode.connect(audioCtx.destination);
+  analyserNode.connect(monitorGain);
+  monitorGain.connect(audioCtx.destination);
 
-  processorNode.onaudioprocess=e=>{
-    const ch=e.inputBuffer.getChannelData(0);
+  startMeter();
 
-    if(!captureActive)return;
+  await refreshDevices();
 
-    captureCallbacks++;
+  const settings=track.getSettings?.()||{};
+  if(settings.deviceId && devices.some(d=>d.deviceId===settings.deviceId)){
+    micSelect.value=settings.deviceId;
+  }
 
-    const copy=new Float32Array(ch.length);
-    copy.set(ch);
-    captureParts.push(copy);
+  tech.textContent=
+    `使用中: ${track.label||"マイク"} / `+
+    `state=${track.readyState} / muted=${track.muted} / `+
+    `${Math.round(audioCtx.sampleRate)}Hz`;
 
-    for(let i=0;i<ch.length;i++){
-      const a=Math.abs(ch[i]);
-      if(a>capturePeak)capturePeak=a;
-    }
+  track.onmute=()=>{
+    tech.textContent=`使用中: ${track.label||"マイク"} / muted=true`;
   };
 
-  // メーターも同じ音声回路から読む。
-  const meterBuf=new Float32Array(analyserNode.fftSize);
-  const drawMeter=()=>{
-    if(!analyserNode)return;
-
-    analyserNode.getFloatTimeDomainData(meterBuf);
-
-    let peak=0;
-    for(let i=0;i<meterBuf.length;i++){
-      const a=Math.abs(meterBuf[i]);
-      if(a>peak)peak=a;
-    }
-
-    const pct=Math.min(100,Math.round(Math.sqrt(peak)*180));
-    meterFill.style.width=pct+"%";
-
-    meterRAF=requestAnimationFrame(drawMeter);
+  track.onunmute=()=>{
+    tech.textContent=`使用中: ${track.label||"マイク"} / muted=false`;
   };
-  drawMeter();
 
   micReady=true;
 
-  // マイク・AudioContext起動直後の無音フレームを録音しない。
+  // AudioContextとマイクが安定してから最初の録音へ。
   await sleep(350);
 }
 
+async function ensureMic(){
+  if(
+    micReady &&
+    stream?.active &&
+    track?.readyState==="live" &&
+    audioCtx &&
+    sourceNode
+  ){
+    if(audioCtx.state==="suspended")await audioCtx.resume();
+    return;
+  }
+
+  await openMic(micSelect.value||null);
+}
+
+// ここは「以前、実際に録音できた」方式へ戻す。
+// 録音する1.9秒だけ sourceNode から直接 ScriptProcessor を分岐する。
 async function capture(ms=1900){
   await ensureMic();
 
   if(audioCtx.state==="suspended"){
     await audioCtx.resume();
-    await sleep(120);
+    await sleep(100);
   }
 
-  captureParts=[];
-  capturePeak=0;
-  captureCallbacks=0;
-  captureActive=true;
+  const proc=audioCtx.createScriptProcessor(2048,1,1);
+  const sink=audioCtx.createGain();
+  sink.gain.value=.000001;
+
+  const parts=[];
+  let peak=0;
+  let callbacks=0;
+
+  proc.onaudioprocess=e=>{
+    callbacks++;
+
+    const ch=e.inputBuffer.getChannelData(0);
+    const copy=new Float32Array(ch.length);
+    copy.set(ch);
+    parts.push(copy);
+
+    for(let i=0;i<ch.length;i++){
+      const a=Math.abs(ch[i]);
+      if(a>peak)peak=a;
+    }
+  };
+
+  // analyserを経由せず、マイクsourceから録音処理へ直接接続。
+  sourceNode.connect(proc);
+  proc.connect(sink);
+  sink.connect(audioCtx.destination);
 
   await sleep(ms);
 
-  captureActive=false;
+  try{sourceNode.disconnect(proc)}catch{}
+  try{proc.disconnect()}catch{}
+  try{sink.disconnect()}catch{}
 
-  const total=captureParts.reduce((n,a)=>n+a.length,0);
+  const total=parts.reduce((n,a)=>n+a.length,0);
   const raw=new Float32Array(total);
 
-  let p=0;
-  for(const a of captureParts){
-    raw.set(a,p);
-    p+=a.length;
+  let pos=0;
+  for(const a of parts){
+    raw.set(a,pos);
+    pos+=a.length;
   }
 
   captureInfo.textContent=
-    `マイク入力 ${capturePeak.toFixed(4)} / `+
-    `${captureCallbacks}フレーム / ${raw.length} samples`;
+    `入力=${peak.toFixed(5)} / `+
+    `frames=${callbacks} / samples=${raw.length}`;
 
-  if(captureCallbacks===0 || raw.length===0){
-    throw new Error("マイク音声が録音処理まで届いていません");
+  if(callbacks===0 || raw.length===0){
+    throw new Error("録音フレームが届いていません");
   }
 
-  // 完全な0だけは録音されていない。
-  // 小さい声はここでは弾かず、そのまま特徴抽出へ渡す。
-  if(capturePeak<0.0000001){
-    throw new Error("マイク入力が0です");
+  if(peak<0.0000001){
+    throw new Error("録音データが0です。上のマイクを変更してください");
   }
 
   return resample(raw,audioCtx.sampleRate,TARGET_SR);
@@ -734,11 +814,29 @@ async function practiceLoop(){
   }
 }
 
+
+changeMic.onclick=async()=>{
+  try{
+    changeMic.disabled=true;
+    statusEl.textContent="マイクを切り替えています…";
+    await openMic(micSelect.value||null);
+    statusEl.textContent="マイクを切り替えました";
+  }catch(e){
+    statusEl.textContent=e.message||String(e);
+  }finally{
+    changeMic.disabled=false;
+  }
+};
+
 startBtn.onclick=async()=>{
   try{
     startBtn.disabled=true;
     startBtn.textContent="マイク準備中…";
-    await ensureMic();
+    if(!micReady){
+      await openMic(null);
+    }else{
+      await ensureMic();
+    }
 
     started=true;
     startBtn.classList.add("hidden");
@@ -753,7 +851,6 @@ startBtn.onclick=async()=>{
 };
 
 window.addEventListener("beforeunload",()=>{
-  captureActive=false;
   try{cancelAnimationFrame(meterRAF)}catch{}
   try{stream?.getTracks().forEach(t=>t.stop())}catch{}
   try{audioCtx?.close()}catch{}
