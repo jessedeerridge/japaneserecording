@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v9.0・問題別候補判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v9.1・誤用との差で判定</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -1371,53 +1371,42 @@ function targetTimelineScore(feat,key){
 
 function judge(feat,target,candidates){
   const scores=classScores(feat,templates,candidates);
-  if(!scores.length)return {correct:false,best:null,scores};
+  if(!scores.length)return {correct:false,best:null,second:null,scores,reason:"nodata"};
 
   const best=scores[0];
-  const second=scores[1]||null;
+  const wrongScores=scores.filter(x=>x.key!==target);
+  const nearestWrong=wrongScores[0]||null;
 
-  // ① 語全体でも正解語が最接近であること。
+  // ① 正解候補が1位であること
   if(best.key!==target){
     return {
-      correct:false,best,second,scores,
+      correct:false,
+      best,
+      second:nearestWrong,
+      nearestWrong,
+      scores,
       reason:"word"
     };
   }
 
-  // ② 正解音声の時間軸を固定して、最初から最後まで全部を見る。
-  const tl=targetTimelineScore(feat,target);
+  // ② 最も近い誤用より、正解が10%以上近いこと
+  //    targetScore / wrongScore <= 0.90 なら合格
+  const ratio=nearestWrong && Number.isFinite(nearestWrong.score) && nearestWrong.score>0
+    ? best.score/nearestWrong.score
+    : 0;
 
-  const moraCount=Math.max(1,Array.from(target).length);
-
-  // 3～4モーラ程度の短語では、1モーラ違いを逃さないよう特に厳しく。
-  let minGoodRatio=.88;
-  let maxBadRun=1;
-
-  if(moraCount<=3){
-    minGoodRatio=.92;
-    maxBadRun=1;
-  }else if(moraCount===4){
-    minGoodRatio=.90;
-    maxBadRun=1;
-  }else{
-    minGoodRatio=.86;
-    maxBadRun=2;
-  }
-
-  const coveragePass=tl.goodRatio>=minGoodRatio;
-  const runPass=tl.longestBadRun<=maxBadRun;
-
-  const correct=coveragePass&&runPass;
+  const marginPass=!nearestWrong || ratio<=0.90;
+  const correct=marginPass;
 
   return {
     correct,
-    best,second,scores,
-    timeline:tl,
-    minGoodRatio,
-    maxBadRun,
-    coveragePass,
-    runPass,
-    reason:correct ? "ok" : "timeline"
+    best,
+    second:nearestWrong,
+    nearestWrong,
+    scores,
+    ratio,
+    marginPass,
+    reason:correct ? "ok" : "margin"
   };
 }
 
@@ -1448,11 +1437,10 @@ async function attempt(){
 
   if(DEBUG){
     const word=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
-    const tl=j.timeline
-      ? ` / 正解区間=${j.timeline.good.filter(Boolean).length}/${j.timeline.bins}`
-        +` / 最大連続×=${j.timeline.longestBadRun}`
+    const margin=Number.isFinite(j.ratio)
+      ? ` / 正解÷最寄り誤用=${j.ratio.toFixed(3)}（0.900以下で○）`
       : "";
-    debugEl.textContent=word+tl;
+    debugEl.textContent=word+margin;
   }
 
   if(j.correct){
@@ -1463,11 +1451,14 @@ async function attempt(){
   }else{
     result.textContent="×";
     result.className="result ng";
-    if(j.reason==="timeline"){
-      const ok=j.timeline.good.filter(Boolean).length;
-      statusEl.textContent=`正解音声との一致 ${ok}/${j.timeline.bins} 区間`;
-    }else{
+    if(j.reason==="margin" && j.nearestWrong){
+      const pct=Math.round((1-j.ratio)*100);
+      statusEl.textContent=
+        `正解に近いですが、誤用との差が小さいです（差 ${pct}%）`;
+    }else if(j.best){
       statusEl.textContent=`この問題でいちばん近い音：${j.best.key}`;
+    }else{
+      statusEl.textContent="判定できませんでした";
     }
     await sleep(850);
   }
