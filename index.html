@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v8.2・DTW全区間判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v8.3・DTW一致率判定</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -1007,6 +1007,130 @@ function targetMultiScaleScore(feat,key){
   };
 }
 
+
+function smoothDistances(arr,win=7){
+  if(!arr.length)return [];
+  if(arr.length<=win){
+    return [arr.reduce((s,v)=>s+v,0)/arr.length];
+  }
+  const out=[];
+  let sum=0;
+  for(let i=0;i<arr.length;i++){
+    sum+=arr[i];
+    if(i>=win)sum-=arr[i-win];
+    if(i>=win-1)out.push(sum/win);
+  }
+  return out;
+}
+
+function longestBadRunRatio(values,threshold){
+  if(!values.length)return 1;
+  let cur=0,max=0;
+  for(const v of values){
+    if(v>threshold){
+      cur++;
+      if(cur>max)max=cur;
+    }else{
+      cur=0;
+    }
+  }
+  return max/values.length;
+}
+
+const coverageCalCache={};
+
+function coverageCalibration(key){
+  if(coverageCalCache[key])return coverageCalCache[key];
+
+  const refs=templates[key]||[];
+  const all=[];
+
+  for(let i=0;i<refs.length;i++){
+    for(let j=i+1;j<refs.length;j++){
+      const d=alignedDistances(refs[i],refs[j]);
+      const s=smoothDistances(d,7);
+      for(const v of s){
+        if(Number.isFinite(v))all.push(v);
+      }
+    }
+  }
+
+  all.sort((a,b)=>a-b);
+
+  if(!all.length){
+    const out={threshold:Infinity};
+    coverageCalCache[key]=out;
+    return out;
+  }
+
+  const med=percentile(all,.50);
+  const p90=percentile(all,.90);
+  const p95=percentile(all,.95);
+
+  const threshold=Math.max(
+    p95*1.28,
+    p90*1.38,
+    med*1.85,
+    .58
+  );
+
+  const out={threshold,median:med,p90,p95};
+  coverageCalCache[key]=out;
+  return out;
+}
+
+function coverageAgainstReference(feat,ref,threshold){
+  const d=alignedDistances(feat,ref);
+  const s=smoothDistances(d,7);
+
+  if(!s.length){
+    return {coverage:0,badRun:1,p80:Infinity,count:0};
+  }
+
+  let good=0;
+  for(const v of s){
+    if(v<=threshold)good++;
+  }
+
+  return {
+    coverage:good/s.length,
+    badRun:longestBadRunRatio(s,threshold),
+    p80:percentile(s,.80),
+    count:s.length
+  };
+}
+
+function targetCoverageScore(feat,key){
+  const refs=templates[key]||[];
+  const cal=coverageCalibration(key);
+  const results=[];
+
+  for(const ref of refs){
+    const r=coverageAgainstReference(feat,ref,cal.threshold);
+    if(r.count)results.push(r);
+  }
+
+  if(!results.length){
+    return {
+      coverage:0,
+      badRun:1,
+      p80:Infinity,
+      threshold:cal.threshold
+    };
+  }
+
+  results.sort((a,b)=>b.coverage-a.coverage);
+  const best=results.slice(0,Math.min(2,results.length));
+  const avg=prop=>best.reduce((s,r)=>s+r[prop],0)/best.length;
+
+  return {
+    coverage:avg("coverage"),
+    badRun:avg("badRun"),
+    p80:avg("p80"),
+    threshold:cal.threshold
+  };
+}
+
 function judge(feat,target){
   const scores=classScores(feat,templates);
   if(!scores.length)return {correct:false,best:null,scores};
@@ -1014,7 +1138,6 @@ function judge(feat,target){
   const best=scores[0];
   const second=scores[1]||null;
 
-  // ① まず全体として正解音声が最も近いこと。
   if(best.key!==target){
     return {
       correct:false,best,second,scores,
@@ -1022,24 +1145,22 @@ function judge(feat,target){
     };
   }
 
-  // ② DTWで時間を合わせたあと、
-  //    最初から最後まで全区間を3つの長さでチェックする。
-  const local=targetMultiScaleScore(feat,target);
-  const cal=multiScaleCalibration(target);
+  const cov=targetCoverageScore(feat,target);
 
-  const shortPass = !Number.isFinite(cal.short)  || local.short<=cal.short;
-  const mediumPass= !Number.isFinite(cal.medium) || local.medium<=cal.medium;
-  const longPass   = !Number.isFinite(cal.long)   || local.long<=cal.long;
-  const meanPass   = !Number.isFinite(cal.mean)   || local.mean<=cal.mean;
-
-  const correct=shortPass&&mediumPass&&longPass&&meanPass;
+  const coveragePass=cov.coverage>=.82;
+  const badRunPass=cov.badRun<=.22;
+  const correct=coveragePass&&badRunPass;
 
   return {
     correct,
     best,second,scores,
-    local,cal,
-    shortPass,mediumPass,longPass,meanPass,
-    reason:correct ? "ok" : "local"
+    coverage:cov.coverage,
+    badRun:cov.badRun,
+    p80:cov.p80,
+    localThreshold:cov.threshold,
+    coveragePass,
+    badRunPass,
+    reason:correct ? "ok" : "coverage"
   };
 }
 
@@ -1068,13 +1189,10 @@ async function attempt(){
 
   if(DEBUG){
     const word=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
-    const li=j.local&&j.cal
-      ? ` / 80ms=${j.local.short.toFixed(2)}/${j.cal.short.toFixed(2)}`
-        +` / 160ms=${j.local.medium.toFixed(2)}/${j.cal.medium.toFixed(2)}`
-        +` / 300ms=${j.local.long.toFixed(2)}/${j.cal.long.toFixed(2)}`
-        +` / 全体=${j.local.mean.toFixed(2)}/${j.cal.mean.toFixed(2)}`
+    const covInfo=Number.isFinite(j.coverage)
+      ? ` / 一致率=${Math.round(j.coverage*100)}% / 連続不一致=${Math.round(j.badRun*100)}%`
       : "";
-    debugEl.textContent=word+li;
+    debugEl.textContent=word+covInfo;
   }
 
   if(j.correct){
@@ -1085,8 +1203,8 @@ async function attempt(){
   }else{
     result.textContent="×";
     result.className="result ng";
-    if(j.reason==="local"){
-      statusEl.textContent="一部の発音が正解音声と違います";
+    if(j.reason==="coverage"){
+      statusEl.textContent=`一致率 ${Math.round(j.coverage*100)}%：正解音声と違う部分があります`;
     }else{
       statusEl.textContent=`いちばん近い音：${j.best.key}`;
     }
