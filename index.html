@@ -22,7 +22,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.1</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -96,24 +96,47 @@ function extractSpeech(x,sr=TARGET_SR){
   const noise=sorted[Math.floor(sorted.length*.20)]||0;
   const peak=Math.max(...rms);
 
-  if(peak<0.0012)throw new Error("声が聞こえません");
+  // 絶対音量では弾かない。
+  // 同じ録音の中で「静かな部分より明らかに大きい部分」を声として探す。
+  let th=noise + (peak-noise)*.18;
+  if(!(th>0)) th=peak*.12;
 
-  const th=Math.max(noise*1.8,peak*.055,0.0008);
-  const voiced=[];
-
+  let voiced=[];
   for(let i=0;i<rms.length;i++){
     if(rms[i]>=th)voiced.push(i);
   }
 
-  if(voiced.length<3)throw new Error("声が短すぎます");
+  // まだ取れない場合は、しきい値をさらに下げる。
+  if(voiced.length<3){
+    th=noise + (peak-noise)*.08;
+    voiced=[];
+    for(let i=0;i<rms.length;i++){
+      if(rms[i]>=th)voiced.push(i);
+    }
+  }
 
-  let first=Math.max(0,voiced[0]-7);
-  let last=Math.min(rms.length-1,voiced[voiced.length-1]+9);
+  let a=0,b=x.length;
 
-  let a=first*hop;
-  let b=Math.min(x.length,last*hop+frame);
+  if(voiced.length>=3){
+    const first=Math.max(0,voiced[0]-7);
+    const last=Math.min(rms.length-1,voiced[voiced.length-1]+9);
+    a=first*hop;
+    b=Math.min(x.length,last*hop+frame);
+  }else{
+    // 最後の保険：最もエネルギーが大きい場所を中心に使う。
+    let best=0;
+    for(let i=1;i<rms.length;i++){
+      if(rms[i]>rms[best])best=i;
+    }
+    const half=Math.round(.65*sr);
+    const center=best*hop+Math.floor(frame/2);
+    a=Math.max(0,center-half);
+    b=Math.min(x.length,center+half);
+  }
 
-  if(b-a<Math.round(sr*.18))throw new Error("声が短すぎます");
+  if(b-a<Math.round(sr*.12)){
+    a=0;b=x.length;
+  }
 
   const y=x.slice(a,b);
 
@@ -130,12 +153,15 @@ function extractSpeech(x,sr=TARGET_SR){
     prev=cur;
   }
 
-  // RMS normalization. Feature extraction later removes remaining channel bias.
+  // 小さい声でも同じ大きさに正規化する。
   let s=0;
   for(const v of out)s+=v*v;
-  const rr=Math.sqrt(s/Math.max(1,out.length))||1;
-  const gain=Math.min(20,.08/rr);
-  for(let i=0;i<out.length;i++)out[i]*=gain;
+  const rr=Math.sqrt(s/Math.max(1,out.length));
+
+  if(rr>0){
+    const gain=Math.min(80,.08/rr);
+    for(let i=0;i<out.length;i++)out[i]*=gain;
+  }
 
   return out;
 }
@@ -461,7 +487,7 @@ async function ensureMic(){
   if(audioCtx.state==="suspended")await audioCtx.resume();
 }
 
-async function capture(ms=2400){
+async function capture(ms=1900){
   await ensureMic();
   if(audioCtx.state==="suspended")await audioCtx.resume();
 
@@ -545,7 +571,7 @@ async function attempt(){
   recordMain.textContent="録音中";
   recordSub.textContent="いま言ってください";
 
-  const pcm=await capture(2400);
+  const pcm=await capture(1900);
 
   recordBox.classList.remove("recording");
   recordMain.textContent="";
