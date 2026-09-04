@@ -176,12 +176,6 @@ async function ensureMic(){
     }
   });
 
-  if(!audioCtx){
-    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  }
-  if(audioCtx.state==="suspended"){
-    await audioCtx.resume();
-  }
   return sharedStream;
 }
 
@@ -199,50 +193,125 @@ function resample(x,from,to){
   return o;
 }
 
-async function recordPcm(ms=1900){
-  const stream=await ensureMic();
-  const src=audioCtx.createMediaStreamSource(stream);
-  const proc=audioCtx.createScriptProcessor(2048,1,1);
-  const gain=audioCtx.createGain();
-  gain.gain.value=0;
+async function blobToPcm(blob){
+  const ab=await blob.arrayBuffer();
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
 
-  const parts=[];
-
-  proc.onaudioprocess=e=>{
-    parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-  };
-
-  src.connect(proc);
-  proc.connect(gain);
-  gain.connect(audioCtx.destination);
-
-  await new Promise(r=>setTimeout(r,120));
-  await new Promise(r=>setTimeout(r,ms));
-
-  proc.disconnect();
-  src.disconnect();
-  gain.disconnect();
-
-  const total=parts.reduce((n,a)=>n+a.length,0);
-  const raw=new Float32Array(total);
-  let pos=0;
-  for(const a of parts){
-    raw.set(a,pos);
-    pos+=a.length;
+  if(ctx.state==="suspended"){
+    await ctx.resume();
   }
 
-  return resample(raw,audioCtx.sampleRate,16000);
+  const buf=await ctx.decodeAudioData(ab.slice(0));
+  const src=buf.getChannelData(0);
+  const from=buf.sampleRate;
+  const to=16000;
+
+  let out;
+  if(from===to){
+    out=new Float32Array(src);
+  }else{
+    const len=Math.max(1,Math.round(src.length*to/from));
+    out=new Float32Array(len);
+
+    for(let i=0;i<len;i++){
+      const p=i*from/to;
+      const a=Math.floor(p);
+      const b=Math.min(src.length-1,a+1);
+      const t=p-a;
+      out[i]=src[a]*(1-t)+src[b]*t;
+    }
+  }
+
+  await ctx.close();
+  return out;
+}
+
+async function recordPcm(ms=2600){
+  const stream=await ensureMic();
+
+  let mime="";
+  if(window.MediaRecorder){
+    if(MediaRecorder.isTypeSupported("audio/webm;codecs=opus")){
+      mime="audio/webm;codecs=opus";
+    }else if(MediaRecorder.isTypeSupported("audio/webm")){
+      mime="audio/webm";
+    }else if(MediaRecorder.isTypeSupported("audio/mp4")){
+      mime="audio/mp4";
+    }
+  }
+
+  if(!window.MediaRecorder){
+    throw new Error("このブラウザでは録音できません");
+  }
+
+  const chunks=[];
+  const rec = mime
+    ? new MediaRecorder(stream,{mimeType:mime})
+    : new MediaRecorder(stream);
+
+  return new Promise((resolve,reject)=>{
+    let stopped=false;
+
+    rec.ondataavailable=e=>{
+      if(e.data && e.data.size>0){
+        chunks.push(e.data);
+      }
+    };
+
+    rec.onerror=e=>{
+      reject(e.error || new Error("録音エラー"));
+    };
+
+    rec.onstop=async()=>{
+      if(stopped)return;
+      stopped=true;
+
+      try{
+        const blob=new Blob(chunks,{type:rec.mimeType || mime || "audio/webm"});
+
+        if(blob.size<500){
+          throw new Error("録音データが作られませんでした");
+        }
+
+        const pcm=await blobToPcm(blob);
+
+        if(!pcm || pcm.length<1000){
+          throw new Error("録音データを読み取れませんでした");
+        }
+
+        resolve(pcm);
+      }catch(e){
+        reject(e);
+      }
+    };
+
+    try{
+      rec.start(200);
+
+      setTimeout(()=>{
+        try{
+          if(rec.state==="recording"){
+            rec.stop();
+          }
+        }catch(e){
+          reject(e);
+        }
+      },ms);
+    }catch(e){
+      reject(e);
+    }
+  });
 }
 
 function trim(x){
   let mx=0;
   for(const v of x)mx=Math.max(mx,Math.abs(v));
 
-  if(mx<.0015){
-    throw new Error("声が入っていません");
+  if(mx<.0003){
+    throw new Error("録音データに音がありません");
   }
 
-  const th=Math.max(.0025,mx*.05);
+  const th=Math.max(.001,mx*.04);
   const w=320;
 
   const rms=p=>{
@@ -408,7 +477,7 @@ async function doAttempt(){
   statusEl.textContent="";
 
   // 以前より長めに録音
-  const pcm=await recordPcm(2600);
+  const pcm=await recordPcm(2400);
 
   recordBox.classList.remove("recording");
   recordMain.textContent="";
