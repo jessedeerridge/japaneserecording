@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v9.1・誤用との差で判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v9.2・誤用との差＋違う部分を重点判定</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -1369,6 +1369,127 @@ function targetTimelineScore(feat,key){
   };
 }
 
+
+function timeNormalizeSequence(seq,bins=18){
+  if(!seq.length)return [];
+  const out=[];
+  for(let b=0;b<bins;b++){
+    let a=Math.floor(b*seq.length/bins);
+    let z=Math.floor((b+1)*seq.length/bins);
+    if(z<=a)z=Math.min(seq.length,a+1);
+    a=Math.min(seq.length-1,a);
+    z=Math.max(a+1,Math.min(seq.length,z));
+
+    const D=seq[0].length;
+    const row=new Array(D).fill(0);
+    let n=0;
+    for(let i=a;i<z;i++){
+      for(let d=0;d<D;d++)row[d]+=seq[i][d];
+      n++;
+    }
+    for(let d=0;d<D;d++)row[d]/=Math.max(1,n);
+    out.push(row);
+  }
+  return out;
+}
+
+function medianValue(arr){
+  if(!arr.length)return Infinity;
+  const a=[...arr].sort((x,y)=>x-y);
+  return a[Math.floor(a.length/2)];
+}
+
+function bestTwoAverage(arr){
+  const a=arr.filter(Number.isFinite).sort((x,y)=>x-y);
+  if(!a.length)return Infinity;
+  const take=Math.min(2,a.length);
+  let s=0;
+  for(let i=0;i<take;i++)s+=a[i];
+  return s/take;
+}
+
+function shiftedBinDistance(q,r,b){
+  let best=Infinity;
+  for(let k=Math.max(0,b-1);k<=Math.min(r.length-1,b+1);k++){
+    best=Math.min(best,frameDistance(q[b],r[k]));
+  }
+  return best;
+}
+
+const contrastWeightCache={};
+
+function contrastWeights(target,wrong,bins=18){
+  const cacheKey=target+"|"+wrong+"|"+bins;
+  if(contrastWeightCache[cacheKey])return contrastWeightCache[cacheKey];
+
+  const trefs=templates[target]||[];
+  const wrefs=templates[wrong]||[];
+  const perBin=Array.from({length:bins},()=>[]);
+
+  for(const tr of trefs){
+    const T=timeNormalizeSequence(tr,bins);
+    for(const wr of wrefs){
+      const W=timeNormalizeSequence(wr,bins);
+      if(T.length!==bins||W.length!==bins)continue;
+      for(let b=0;b<bins;b++){
+        perBin[b].push(frameDistance(T[b],W[b]));
+      }
+    }
+  }
+
+  const sep=perBin.map(a=>medianValue(a));
+  const finite=sep.filter(Number.isFinite);
+  const p60=finite.length?percentile(finite,.60):0;
+  const p80=finite.length?percentile(finite,.80):0;
+
+  // 正解と誤用で違いが大きい時間位置ほど重くする。
+  const weights=sep.map(v=>{
+    if(!Number.isFinite(v))return 1;
+    if(v>=p80)return 8;
+    if(v>=p60)return 4;
+    return 1;
+  });
+
+  contrastWeightCache[cacheKey]=weights;
+  return weights;
+}
+
+function weightedNormalizedDistance(query,ref,weights){
+  const bins=weights.length;
+  const Q=timeNormalizeSequence(query,bins);
+  const R=timeNormalizeSequence(ref,bins);
+  if(Q.length!==bins||R.length!==bins)return Infinity;
+
+  let s=0,w=0;
+  for(let b=0;b<bins;b++){
+    const d=shiftedBinDistance(Q,R,b);
+    const ww=weights[b];
+    if(Number.isFinite(d)){
+      s+=d*ww;
+      w+=ww;
+    }
+  }
+  return w?s/w:Infinity;
+}
+
+function contrastivePairScore(feat,target,wrong){
+  const bins=18;
+  const weights=contrastWeights(target,wrong,bins);
+
+  const targetScores=(templates[target]||[])
+    .map(ref=>weightedNormalizedDistance(feat,ref,weights));
+  const wrongScores=(templates[wrong]||[])
+    .map(ref=>weightedNormalizedDistance(feat,ref,weights));
+
+  const targetScore=bestTwoAverage(targetScores);
+  const wrongScore=bestTwoAverage(wrongScores);
+  const ratio=Number.isFinite(targetScore)&&Number.isFinite(wrongScore)&&wrongScore>0
+    ? targetScore/wrongScore
+    : Infinity;
+
+  return {targetScore,wrongScore,ratio,weights};
+}
+
 function judge(feat,target,candidates){
   const scores=classScores(feat,templates,candidates);
   if(!scores.length)return {correct:false,best:null,second:null,scores,reason:"nodata"};
@@ -1377,7 +1498,7 @@ function judge(feat,target,candidates){
   const wrongScores=scores.filter(x=>x.key!==target);
   const nearestWrong=wrongScores[0]||null;
 
-  // ① 正解候補が1位であること
+  // ① まず語全体では正解が1位であること。
   if(best.key!==target){
     return {
       correct:false,
@@ -1389,14 +1510,24 @@ function judge(feat,target,candidates){
     };
   }
 
-  // ② 最も近い誤用より、正解が10%以上近いこと
-  //    targetScore / wrongScore <= 0.90 なら合格
-  const ratio=nearestWrong && Number.isFinite(nearestWrong.score) && nearestWrong.score>0
+  const globalRatio=nearestWrong && Number.isFinite(nearestWrong.score) && nearestWrong.score>0
     ? best.score/nearestWrong.score
     : 0;
 
-  const marginPass=!nearestWrong || ratio<=0.90;
-  const correct=marginPass;
+  // 語全体で10%以上勝っていればそのまま○。
+  const globalStrong=!nearestWrong || globalRatio<=0.90;
+
+  // 語全体では差が小さい場合、
+  // 「正解と誤用で実際に違う時間位置」を重点的に比較する。
+  let contrast=null;
+  let contrastStrong=false;
+
+  if(nearestWrong){
+    contrast=contrastivePairScore(feat,target,nearestWrong.key);
+    contrastStrong=Number.isFinite(contrast.ratio) && contrast.ratio<=0.97;
+  }
+
+  const correct=globalStrong || contrastStrong;
 
   return {
     correct,
@@ -1404,8 +1535,10 @@ function judge(feat,target,candidates){
     second:nearestWrong,
     nearestWrong,
     scores,
-    ratio,
-    marginPass,
+    globalRatio,
+    globalStrong,
+    contrast,
+    contrastStrong,
     reason:correct ? "ok" : "margin"
   };
 }
@@ -1437,10 +1570,13 @@ async function attempt(){
 
   if(DEBUG){
     const word=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
-    const margin=Number.isFinite(j.ratio)
-      ? ` / 正解÷最寄り誤用=${j.ratio.toFixed(3)}（0.900以下で○）`
+    const g=Number.isFinite(j.globalRatio)
+      ? ` / 全体比=${j.globalRatio.toFixed(3)}`
       : "";
-    debugEl.textContent=word+margin;
+    const c=j.contrast && Number.isFinite(j.contrast.ratio)
+      ? ` / 違う部分比=${j.contrast.ratio.toFixed(3)}（0.970以下で○）`
+      : "";
+    debugEl.textContent=word+g+c;
   }
 
   if(j.correct){
@@ -1452,9 +1588,15 @@ async function attempt(){
     result.textContent="×";
     result.className="result ng";
     if(j.reason==="margin" && j.nearestWrong){
-      const pct=Math.round((1-j.ratio)*100);
+      const g=Number.isFinite(j.globalRatio)
+        ? Math.round((1-j.globalRatio)*100)
+        : 0;
+      const c=j.contrast && Number.isFinite(j.contrast.ratio)
+        ? Math.round((1-j.contrast.ratio)*100)
+        : 0;
+
       statusEl.textContent=
-        `正解に近いですが、誤用との差が小さいです（差 ${pct}%）`;
+        `正解に近いですが判定があいまいです（全体差 ${g}% / 違う部分差 ${c}%）`;
     }else if(j.best){
       statusEl.textContent=`この問題でいちばん近い音：${j.best.key}`;
     }else{
