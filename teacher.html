@@ -3,67 +3,43 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>て形 正解音声登録 PRO</title>
+<title>て形 正解音声登録 v6</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f3f4f6;color:#111;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
 .wrap{width:min(760px,94vw);margin:24px auto 60px}
 .card{background:#fff;border:1px solid #ddd;border-radius:20px;padding:24px;box-shadow:0 5px 18px rgba(0,0,0,.06)}
-h1{font-size:24px;margin:0 0 6px}
-.sub{font-size:13px;color:#666;margin-bottom:16px;line-height:1.5}
+h1{font-size:24px;margin:0 0 6px}.sub{font-size:13px;color:#666;margin-bottom:16px;line-height:1.5}
 .top{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 button{border:0;border-radius:12px;padding:12px 16px;font-size:16px;font-weight:700;cursor:pointer}
-button:disabled{opacity:.45}
-.primary{background:#111;color:#fff}.light{background:#e9e9e9}.warn{background:#ffe4e4;color:#8a1515}
-.rec{
-  min-height:175px;border:3px solid #222;border-radius:17px;margin:12px 0 16px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:15px;
-  transition:background .22s ease,color .22s ease,transform .22s ease
-}
+button:disabled{opacity:.45}.primary{background:#111;color:#fff}.light{background:#e9e9e9}.warn{background:#ffe4e4;color:#8a1515}
+.rec{min-height:175px;border:3px solid #222;border-radius:17px;margin:12px 0 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:15px;transition:background .15s,color .15s}
 .rec.on{background:#111;color:#fff}
-
-.big{font-size:32px;font-weight:900}
-.mid{font-size:18px;margin-top:6px}
-.heard{font-size:16px;margin-top:9px;min-height:24px}
+.big{font-size:32px;font-weight:900}.mid{font-size:18px;margin-top:6px}
 .row{display:grid;grid-template-columns:1fr 62px;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #eee}
 .word{font-size:18px}.count{text-align:center;color:#666}
-.range{display:flex;gap:10px;align-items:center;margin-top:15px}.range input{flex:1}
 .note{margin-top:14px;background:#f7f7f7;padding:11px;border-radius:11px;font-size:13px;color:#555;line-height:1.55}
-.diag{margin-top:10px;font-size:12px;color:#777;word-break:break-word}
+.diag{margin-top:10px;font-size:12px;color:#777}
 </style>
 </head>
 <body>
 <div class="wrap"><div class="card">
-<h1>て形・正解音声登録 PRO</h1>
-<div class="sub">
-最初の「開始」でマイクとGoogle音声認識を開始します。
-判定表示はすべてひらがなにそろえます。
-</div>
+<h1>て形・正解音声登録 v6</h1>
+<div class="sub">新しい判定方式用です。合図音は鳴らしません。</div>
 
 <div class="top">
-  <button id="start" class="primary">開始</button>
-  <button id="export" class="light">JSONを書き出す</button>
-  <button id="clear" class="warn">全部消す</button>
+<button id="start" class="primary">開始</button>
+<button id="export" class="light">JSONを書き出す</button>
+<button id="clear" class="warn">全部消す</button>
 </div>
 
 <div id="rec" class="rec">
-  <div id="title" class="big">開始してください</div>
-  <div id="counter" class="mid"></div>
-  <div id="heard" class="heard">認識結果：―</div>
+<div id="title" class="big">開始してください</div>
+<div id="counter" class="mid"></div>
 </div>
 
 <div id="list"></div>
-
-<div class="range">
-  <span>判定</span>
-  <input id="threshold" type="range" min="35" max="85" value="60">
-  <b id="thv">60</b>
-</div>
-
-<div class="note">
-正しく認識された回だけ保存します。3回成功するとすぐ次の語へ進みます。
-マイク許可はブラウザ側で保存され、HTML側では許可済みかどうかを確認して再利用します。
-</div>
+<div class="note">黒くなったら表示された語を言ってください。正しく認識された録音だけ3回保存します。</div>
 <div id="diag" class="diag"></div>
 </div></div>
 
@@ -73,128 +49,450 @@ const ITEMS=[
 ["飲みます","飲んで","のんで"],["話します","話して","はなして"],["食べます","食べて","たべて"],
 ["見ます","見て","みて"],["起きます","起きて","おきて"],["寝ます","寝て","ねて"],
 ["行きます","行って","いって"],["買います","買って","かって"],["待ちます","待って","まって"],
-["遊びます","遊んで","あそんで"],["泳ぎます","泳いで","およいで"],["します","して","して"],
-["来ます","来て","きて"]
+["遊びます","遊んで","あそんで"],["泳ぎます","泳いで","およいで"],["します","して","して"],["来ます","来て","きて"]
 ];
 
 const $=s=>document.querySelector(s);
 const startBtn=$("#start"),exportBtn=$("#export"),clearBtn=$("#clear");
-const recBox=$("#rec"),title=$("#title"),counter=$("#counter"),heard=$("#heard"),diag=$("#diag");
-const list=$("#list"),threshold=$("#threshold"),thv=$("#thv");
+const recBox=$("#rec"),title=$("#title"),counter=$("#counter"),list=$("#list"),diag=$("#diag");
 
 let templates={};
-try{templates=JSON.parse(localStorage.getItem("teform_voice_templates_pro")||"{}")}catch{}
+try{
+  const old=JSON.parse(localStorage.getItem("teform_voice_templates_v6")||"{}");
+  templates=old||{};
+}catch{}
 
-let sharedStream=null;
-let audioCtx=null;
-let recognizer=null;
-let recognizerRunning=false;
-let keepRecognizerAlive=false;
+let stream=null,audioCtx=null,recognizer=null;
+let recognizerRunning=false,keepRecognizerAlive=false;
+let attemptActive=false,attemptTexts=[],attemptResolver=null;
 let appRunning=false;
-let attemptActive=false;
-let attemptTexts=[];
-let attemptResultResolver=null;
-let attemptSeq=0;
 
-threshold.oninput=()=>thv.textContent=threshold.value;
+
+const FEATURE_VERSION=6;
+const TARGET_SR=16000;
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+
+function resample(x,from,to=TARGET_SR){
+  if(from===to)return new Float32Array(x);
+  const len=Math.max(1,Math.round(x.length*to/from));
+  const out=new Float32Array(len);
+  for(let i=0;i<len;i++){
+    const p=i*from/to;
+    const a=Math.floor(p);
+    const b=Math.min(x.length-1,a+1);
+    const t=p-a;
+    out[i]=x[a]*(1-t)+x[b]*t;
+  }
+  return out;
+}
+
+function extractSpeech(x,sr=TARGET_SR){
+  const frame=Math.round(sr*.02);
+  const hop=Math.round(sr*.01);
+  const rms=[];
+
+  for(let p=0;p+frame<=x.length;p+=hop){
+    let s=0;
+    for(let i=0;i<frame;i++){
+      const v=x[p+i];
+      s+=v*v;
+    }
+    rms.push(Math.sqrt(s/frame));
+  }
+
+  if(!rms.length)throw new Error("録音が短すぎます");
+
+  const sorted=[...rms].sort((a,b)=>a-b);
+  const noise=sorted[Math.floor(sorted.length*.20)]||0;
+  const peak=Math.max(...rms);
+
+  if(peak<0.0012)throw new Error("声が聞こえません");
+
+  const th=Math.max(noise*1.8,peak*.055,0.0008);
+  const voiced=[];
+
+  for(let i=0;i<rms.length;i++){
+    if(rms[i]>=th)voiced.push(i);
+  }
+
+  if(voiced.length<3)throw new Error("声が短すぎます");
+
+  let first=Math.max(0,voiced[0]-7);
+  let last=Math.min(rms.length-1,voiced[voiced.length-1]+9);
+
+  let a=first*hop;
+  let b=Math.min(x.length,last*hop+frame);
+
+  if(b-a<Math.round(sr*.18))throw new Error("声が短すぎます");
+
+  const y=x.slice(a,b);
+
+  // DC removal + gentle pre-emphasis.
+  let mean=0;
+  for(const v of y)mean+=v;
+  mean/=Math.max(1,y.length);
+
+  const out=new Float32Array(y.length);
+  let prev=0;
+  for(let i=0;i<y.length;i++){
+    const cur=y[i]-mean;
+    out[i]=i===0 ? cur : cur-.97*prev;
+    prev=cur;
+  }
+
+  // RMS normalization. Feature extraction later removes remaining channel bias.
+  let s=0;
+  for(const v of out)s+=v*v;
+  const rr=Math.sqrt(s/Math.max(1,out.length))||1;
+  const gain=Math.min(20,.08/rr);
+  for(let i=0;i<out.length;i++)out[i]*=gain;
+
+  return out;
+}
+
+function fftMagPower(frame){
+  const N=512;
+  const re=new Float64Array(N);
+  const im=new Float64Array(N);
+
+  for(let i=0;i<frame.length && i<N;i++)re[i]=frame[i];
+
+  // bit reversal
+  for(let i=1,j=0;i<N;i++){
+    let bit=N>>1;
+    for(;j&bit;bit>>=1)j^=bit;
+    j^=bit;
+    if(i<j){
+      const tr=re[i];re[i]=re[j];re[j]=tr;
+    }
+  }
+
+  for(let len=2;len<=N;len<<=1){
+    const ang=-2*Math.PI/len;
+    const wlenR=Math.cos(ang),wlenI=Math.sin(ang);
+
+    for(let i=0;i<N;i+=len){
+      let wr=1,wi=0;
+      const half=len>>1;
+
+      for(let j=0;j<half;j++){
+        const uR=re[i+j],uI=im[i+j];
+        const k=i+j+half;
+        const vR=re[k]*wr-im[k]*wi;
+        const vI=re[k]*wi+im[k]*wr;
+
+        re[i+j]=uR+vR;
+        im[i+j]=uI+vI;
+        re[k]=uR-vR;
+        im[k]=uI-vI;
+
+        const nwr=wr*wlenR-wi*wlenI;
+        wi=wr*wlenI+wi*wlenR;
+        wr=nwr;
+      }
+    }
+  }
+
+  const p=new Float64Array(N/2+1);
+  for(let i=0;i<p.length;i++)p[i]=re[i]*re[i]+im[i]*im[i];
+  return p;
+}
+
+function hzToMel(hz){return 2595*Math.log10(1+hz/700)}
+function melToHz(m){return 700*(Math.pow(10,m/2595)-1)}
+
+let MEL_BANK=null;
+function getMelBank(){
+  if(MEL_BANK)return MEL_BANK;
+
+  const NFFT=512;
+  const nFilters=26;
+  const minHz=80,maxHz=7600;
+  const minMel=hzToMel(minHz),maxMel=hzToMel(maxHz);
+  const hz=[];
+
+  for(let i=0;i<nFilters+2;i++){
+    hz.push(melToHz(minMel+(maxMel-minMel)*i/(nFilters+1)));
+  }
+
+  const bins=hz.map(h=>Math.max(0,Math.min(NFFT/2,Math.floor((NFFT+1)*h/TARGET_SR))));
+  const bank=[];
+
+  for(let m=1;m<=nFilters;m++){
+    const weights=[];
+    const l=bins[m-1],c=bins[m],r=bins[m+1];
+
+    for(let k=l;k<=r;k++){
+      let w=0;
+      if(k<c)w=(k-l)/Math.max(1,c-l);
+      else if(k>c)w=(r-k)/Math.max(1,r-c);
+      else w=1;
+
+      if(w>0)weights.push([k,w]);
+    }
+    bank.push(weights);
+  }
+
+  MEL_BANK=bank;
+  return bank;
+}
+
+function mfccSequence(raw){
+  const x=extractSpeech(raw,TARGET_SR);
+  const frameSize=400; // 25 ms
+  const hop=160;       // 10 ms
+  const bank=getMelBank();
+  const staticSeq=[];
+
+  for(let p=0;p+frameSize<=x.length;p+=hop){
+    const fr=new Float64Array(512);
+
+    for(let i=0;i<frameSize;i++){
+      const win=.54-.46*Math.cos(2*Math.PI*i/(frameSize-1));
+      fr[i]=x[p+i]*win;
+    }
+
+    const pow=fftMagPower(fr);
+    const logs=[];
+
+    for(const filt of bank){
+      let e=0;
+      for(const [k,w] of filt)e+=pow[k]*w;
+      logs.push(Math.log(e+1e-10));
+    }
+
+    // MFCC 1..12. c0 is intentionally omitted.
+    const row=[];
+    const M=logs.length;
+    for(let c=1;c<=12;c++){
+      let s=0;
+      for(let m=0;m<M;m++){
+        s+=logs[m]*Math.cos(Math.PI*c*(m+.5)/M);
+      }
+      row.push(s);
+    }
+    staticSeq.push(row);
+  }
+
+  if(staticSeq.length<6)throw new Error("声が短すぎます");
+
+  // Cepstral mean/variance normalization per utterance.
+  const T=staticSeq.length,D=12;
+  const mean=new Float64Array(D);
+  const sd=new Float64Array(D);
+
+  for(const row of staticSeq){
+    for(let d=0;d<D;d++)mean[d]+=row[d];
+  }
+  for(let d=0;d<D;d++)mean[d]/=T;
+
+  for(const row of staticSeq){
+    for(let d=0;d<D;d++){
+      const z=row[d]-mean[d];
+      sd[d]+=z*z;
+    }
+  }
+  for(let d=0;d<D;d++)sd[d]=Math.sqrt(sd[d]/T)||1;
+
+  const norm=staticSeq.map(row=>row.map((v,d)=>(v-mean[d])/sd[d]));
+  const out=[];
+
+  for(let t=0;t<T;t++){
+    const prev=norm[Math.max(0,t-2)];
+    const next=norm[Math.min(T-1,t+2)];
+    const row=[];
+
+    for(let d=0;d<D;d++)row.push(norm[t][d]);
+    for(let d=0;d<D;d++)row.push((next[d]-prev[d])*.25);
+
+    out.push(row.map(v=>Math.round(v*1000)/1000));
+  }
+
+  return out;
+}
+
+function frameDistance(a,b){
+  const D=Math.min(a.length,b.length);
+  let staticS=0,deltaS=0;
+  const half=Math.min(12,D);
+
+  for(let d=0;d<half;d++){
+    const q=a[d]-b[d];
+    staticS+=q*q;
+  }
+  for(let d=12;d<D;d++){
+    const q=a[d]-b[d];
+    deltaS+=q*q;
+  }
+
+  const st=Math.sqrt(staticS/Math.max(1,half));
+  const de=Math.sqrt(deltaS/Math.max(1,D-12));
+  return st*.72+de*.28;
+}
+
+function dtw(A,B){
+  const n=A.length,m=B.length;
+  if(!n||!m)return Infinity;
+
+  // Prevent pathological warping.
+  const band=Math.max(8,Math.ceil(Math.max(n,m)*.38));
+  const prev=new Float64Array(m+1);
+  const prevLen=new Uint16Array(m+1);
+  prev.fill(Infinity);
+  prev[0]=0;
+
+  for(let i=1;i<=n;i++){
+    const cur=new Float64Array(m+1);
+    const curLen=new Uint16Array(m+1);
+    cur.fill(Infinity);
+
+    const center=i*m/n;
+    const j0=Math.max(1,Math.floor(center-band));
+    const j1=Math.min(m,Math.ceil(center+band));
+
+    for(let j=j0;j<=j1;j++){
+      const c=frameDistance(A[i-1],B[j-1]);
+
+      let best=prev[j-1],bl=prevLen[j-1];
+
+      if(prev[j]<best){
+        best=prev[j];bl=prevLen[j];
+      }
+      if(cur[j-1]<best){
+        best=cur[j-1];bl=curLen[j-1];
+      }
+
+      if(Number.isFinite(best)){
+        cur[j]=best+c;
+        curLen[j]=bl+1;
+      }
+    }
+
+    prev.set(cur);
+    prevLen.set(curLen);
+  }
+
+  return prev[m]/Math.max(1,prevLen[m]);
+}
+
+function classScores(feat,templates){
+  const scores=[];
+
+  for(const [key,refs] of Object.entries(templates)){
+    if(!Array.isArray(refs)||!refs.length)continue;
+
+    const ds=[];
+    for(const ref of refs){
+      try{
+        const d=dtw(feat,ref);
+        if(Number.isFinite(d))ds.push(d);
+      }catch{}
+    }
+    if(!ds.length)continue;
+
+    ds.sort((a,b)=>a-b);
+    const take=Math.min(2,ds.length);
+    let score=0;
+    for(let i=0;i<take;i++)score+=ds[i];
+    score/=take;
+
+    scores.push({key,score});
+  }
+
+  scores.sort((a,b)=>a.score-b.score);
+  return scores;
+}
+
+function classCalibration(key,templates){
+  const refs=templates[key]||[];
+  const within=[];
+
+  for(let i=0;i<refs.length;i++){
+    for(let j=i+1;j<refs.length;j++){
+      const d=dtw(refs[i],refs[j]);
+      if(Number.isFinite(d))within.push(d);
+    }
+  }
+
+  within.sort((a,b)=>a-b);
+  const median=within.length
+    ? within[Math.floor(within.length/2)]
+    : Infinity;
+  const max=within.length ? within[within.length-1] : Infinity;
+
+  // Nearest other-class reference. This is used only to keep acceptance
+  // well inside the class boundary.
+  let nearestOther=Infinity;
+  for(const [other,orefs] of Object.entries(templates)){
+    if(other===key)continue;
+    for(const a of refs){
+      for(const b of orefs||[]){
+        const d=dtw(a,b);
+        if(d<nearestOther)nearestOther=d;
+      }
+    }
+  }
+
+  let limit=Infinity;
+  if(Number.isFinite(median)){
+    limit=Math.max(median*2.0,max*1.45);
+  }
+  if(Number.isFinite(nearestOther)){
+    limit=Math.min(limit,nearestOther*.78);
+  }
+
+  return {median,max,nearestOther,limit};
+}
+
 
 function save(){
-  localStorage.setItem("teform_voice_templates_pro",JSON.stringify(templates));
+  localStorage.setItem("teform_voice_templates_v6",JSON.stringify(templates));
 }
 
 function render(){
   list.innerHTML="";
-  for(const x of ITEMS){
+  for(const item of ITEMS){
     const d=document.createElement("div");
     d.className="row";
-    d.innerHTML=`<div class="word">${x[0]} → ${x[1]}</div>
-                 <div class="count">${Math.min((templates[x[2]]||[]).length,3)}/3</div>`;
+    d.innerHTML=`<div class="word">${item[0]} → ${item[1]}</div><div class="count">${Math.min((templates[item[2]]||[]).length,3)}/3</div>`;
     list.appendChild(d);
   }
 }
 
 function norm(s){
-  return (s||"")
-    .trim()
-    .replace(/[、。！？!?,.\s「」『』]/g,"")
-    .replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
-}
-
-// Googleが漢字で返しても、判定時は最終的に全部ひらがなとして比較する。
-// 各問題について、よく出る同音異字をその問題の正解ひらがなへ寄せる。
-function toHiraganaForItem(text,item){
-  const n=norm(text);
-
-  const variants={
-    "かいて":["かいて","書いて","描いて"],
-    "きいて":["きいて","聞いて","聴いて","訊いて"],
-    "よんで":["よんで","読んで","呼んで"],
-    "のんで":["のんで","飲んで"],
-    "はなして":["はなして","話して","離して","放して"],
-    "たべて":["たべて","食べて"],
-    "みて":["みて","見て","観て"],
-    "おきて":["おきて","起きて","置きて"],
-    "ねて":["ねて","寝て"],
-    "いって":["いって","行って","言って"],
-    "かって":["かって","買って","勝って","飼って"],
-    "まって":["まって","待って"],
-    "あそんで":["あそんで","遊んで"],
-    "およいで":["およいで","泳いで"],
-    "して":["して"],
-    "きて":["きて","来て","着て"]
-  };
-
-  for(const v of (variants[item[2]]||[])){
-    if(n===norm(v)) return item[2];
-  }
-
-  return n;
+  return (s||"").trim().replace(/[、。！？!?,.\s「」『』]/g,"").replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
 }
 
 function accepted(text,item){
-  return toHiraganaForItem(text,item) === item[2];
-}
-
-async function getMicPermissionState(){
-  try{
-    if(navigator.permissions && navigator.permissions.query){
-      const p=await navigator.permissions.query({name:"microphone"});
-      return p.state; // granted / prompt / denied
-    }
-  }catch{}
-  return "unknown";
+  const n=norm(text);
+  const variants={
+    "かいて":["かいて","書いて","描いて"],"きいて":["きいて","聞いて","聴いて","訊いて"],
+    "よんで":["よんで","読んで","呼んで"],"のんで":["のんで","飲んで"],
+    "はなして":["はなして","話して","離して","放して"],"たべて":["たべて","食べて"],
+    "みて":["みて","見て","観て"],"おきて":["おきて","起きて"],"ねて":["ねて","寝て"],
+    "いって":["いって","行って","言って"],"かって":["かって","買って","勝って","飼って"],
+    "まって":["まって","待って"],"あそんで":["あそんで","遊んで"],"およいで":["およいで","泳いで"],
+    "して":["して"],"きて":["きて","来て","着て"]
+  };
+  return (variants[item[2]]||[]).some(v=>n===norm(v));
 }
 
 async function ensureMic(){
-  if(sharedStream && sharedStream.active)return sharedStream;
+  if(stream&&stream.active)return;
 
-  const state=await getMicPermissionState();
-
-  // localStorageは「前に許可した」目印としてだけ使う。
-  // 実際の許可そのものはブラウザがorigin単位で管理する。
-  const wasGranted = localStorage.getItem("teform_mic_permission_seen")==="1";
-
-  sharedStream=await navigator.mediaDevices.getUserMedia({
-    audio:{
-      echoCancellation:true,
-      noiseSuppression:true,
-      autoGainControl:true,
-      channelCount:1
-    }
+  stream=await navigator.mediaDevices.getUserMedia({
+    audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},
+    video:false
   });
-
-  localStorage.setItem("teform_mic_permission_seen","1");
 
   audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state==="suspended")await audioCtx.resume();
-
-  diag.textContent = "マイク許可：" + ((state==="granted" || wasGranted) ? "許可済み" : "今回許可");
-  return sharedStream;
 }
 
 function initRecognizer(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR)throw new Error("このブラウザはGoogle音声認識に対応していません。Chromeで開いてください。");
+  if(!SR)throw new Error("Chromeで開いてください");
 
   recognizer=new SR();
   recognizer.lang="ja-JP";
@@ -202,340 +500,169 @@ function initRecognizer(){
   recognizer.interimResults=true;
   recognizer.maxAlternatives=5;
 
-  recognizer.onstart=()=>{
-    recognizerRunning=true;
-    diag.textContent="音声認識：接続中";
+  recognizer.onstart=()=>{recognizerRunning=true;diag.textContent="音声認識：接続中"};
+  recognizer.onend=()=>{
+    recognizerRunning=false;
+    if(keepRecognizerAlive)setTimeout(()=>{try{recognizer.start()}catch{}},120);
   };
+  recognizer.onerror=e=>diag.textContent="音声認識："+e.error;
 
   recognizer.onresult=e=>{
     if(!attemptActive)return;
-
     for(let i=e.resultIndex;i<e.results.length;i++){
-      const r=e.results[i];
-      for(let j=0;j<r.length;j++){
-        const t=(r[j].transcript||"").trim();
-        if(t && !attemptTexts.includes(t)){
-          attemptTexts.push(t);
-        }
+      for(let j=0;j<e.results[i].length;j++){
+        const t=(e.results[i][j].transcript||"").trim();
+        if(t&&!attemptTexts.includes(t))attemptTexts.push(t);
       }
     }
-
-    if(attemptTexts.length){
-      // 表示は判定確定後に一度だけ更新する。
-      // ここでは内部データだけ受け取り、画面は触らない。
-      if(attemptResultResolver){
-        attemptResultResolver();
-        attemptResultResolver=null;
-      }
-    }
-  };
-
-  recognizer.onerror=e=>{
-    diag.textContent="音声認識："+e.error;
-  };
-
-  recognizer.onend=()=>{
-    recognizerRunning=false;
-    diag.textContent="音声認識：再接続中";
-
-    if(keepRecognizerAlive){
-      setTimeout(()=>{
-        try{
-          recognizer.start();
-        }catch{}
-      },120);
+    if(attemptTexts.length&&attemptResolver){
+      const r=attemptResolver;attemptResolver=null;r();
     }
   };
 }
 
-function startRecognizerOnce(){
+async function ensureRecognizer(){
   if(!recognizer)initRecognizer();
   keepRecognizerAlive=true;
+  if(recognizerRunning)return;
 
-  return new Promise(resolve=>{
-    if(recognizerRunning){resolve();return}
-
+  await new Promise(resolve=>{
     const old=recognizer.onstart;
     recognizer.onstart=()=>{
       old?.();
       recognizer.onstart=old;
       resolve();
     };
-
-    try{
-      recognizer.start();
-    }catch{
-      setTimeout(resolve,250);
-    }
-
-    setTimeout(resolve,1500);
+    try{recognizer.start()}catch{}
+    setTimeout(resolve,1200);
   });
 }
 
-async function waitRecognizerReady(){
-  if(recognizerRunning)return;
-  await startRecognizerOnce();
-  await new Promise(r=>setTimeout(r,80));
-}
-
-function resample(x,from,to){
-  if(from===to)return x;
-  const len=Math.max(1,Math.round(x.length*to/from));
-  const o=new Float32Array(len);
-  for(let i=0;i<len;i++){
-    const p=i*from/to,a=Math.floor(p),b=Math.min(x.length-1,a+1),t=p-a;
-    o[i]=x[a]*(1-t)+x[b]*t;
-  }
-  return o;
-}
-
-async function captureAttempt(ms=1450){
-  const stream=await ensureMic();
+async function capture(ms=1900){
+  await ensureMic();
   if(audioCtx.state==="suspended")await audioCtx.resume();
 
   const src=audioCtx.createMediaStreamSource(stream);
   const proc=audioCtx.createScriptProcessor(2048,1,1);
-  const gain=audioCtx.createGain();
-  gain.gain.value=0;
+  const sink=audioCtx.createGain();
+  sink.gain.value=.000001;
   const parts=[];
 
-  proc.onaudioprocess=e=>{
-    parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-  };
+  proc.onaudioprocess=e=>parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
 
-  src.connect(proc);
-  proc.connect(gain);
-  gain.connect(audioCtx.destination);
-
-  await new Promise(r=>setTimeout(r,ms));
-
-  proc.disconnect();
-  src.disconnect();
-  gain.disconnect();
+  src.connect(proc);proc.connect(sink);sink.connect(audioCtx.destination);
+  await sleep(ms);
+  try{src.disconnect(proc)}catch{}
+  try{proc.disconnect()}catch{}
+  try{sink.disconnect()}catch{}
 
   const total=parts.reduce((n,a)=>n+a.length,0);
   const raw=new Float32Array(total);
-  let pos=0;
-  for(const a of parts){raw.set(a,pos);pos+=a.length}
+  let p=0;
+  for(const a of parts){raw.set(a,p);p+=a.length}
 
-  return resample(raw,audioCtx.sampleRate,16000);
+  if(!raw.length)throw new Error("録音できませんでした");
+  return resample(raw,audioCtx.sampleRate,TARGET_SR);
 }
 
-function trim(x){
-  let mx=0;
-  for(const v of x)mx=Math.max(mx,Math.abs(v));
-  if(mx<.006)return x;
-
-  const th=Math.max(.01,mx*.07),w=320;
-  const rms=p=>{
-    let s=0,n=0;
-    for(let i=p;i<Math.min(x.length,p+w);i++){s+=x[i]*x[i];n++}
-    return Math.sqrt(s/Math.max(1,n));
-  };
-
-  let a=0,b=x.length;
-  for(let p=0;p<x.length-w;p+=160){
-    if(rms(p)>th){a=Math.max(0,p-640);break}
-  }
-  for(let p=x.length-w;p>0;p-=160){
-    if(rms(p)>th){b=Math.min(x.length,p+w+640);break}
-  }
-
-  return x.slice(a,b);
-}
-
-function fingerprint(x){
-  x=trim(x);
-  if(x.length<1500)throw new Error("声が短すぎます");
-
-  const F=28,B=18,N=256,out=[];
-
-  for(let f=0;f<F;f++){
-    const st=Math.max(0,Math.min(
-      x.length-N-1,
-      Math.floor((f+.5)/F*x.length-N/2)
-    ));
-
-    const row=[];
-
-    for(let b=0;b<B;b++){
-      const fr=180*Math.pow(4200/180,b/(B-1));
-      const w=2*Math.PI*fr/16000;
-      let re=0,im=0;
-
-      for(let n=0;n<N;n++){
-        const win=.5-.5*Math.cos(2*Math.PI*n/(N-1));
-        const v=(x[st+n]||0)*win;
-        re+=v*Math.cos(w*n);
-        im-=v*Math.sin(w*n);
-      }
-
-      row.push(Math.log(1e-7+re*re+im*im));
-    }
-
-    const m=row.reduce((a,b)=>a+b,0)/B;
-    let ss=0;
-    for(let b=0;b<B;b++){
-      row[b]-=m;
-      ss+=row[b]*row[b];
-    }
-
-    const sd=Math.sqrt(ss/B)||1;
-    for(let b=0;b<B;b++)row[b]/=sd;
-
-    out.push(row);
-  }
-
-  return out;
-}
-
-function waitForRecognition(maxMs=700){
+function waitRecognition(ms=900){
   if(attemptTexts.length)return Promise.resolve();
-
   return new Promise(resolve=>{
     let done=false;
-    const finish=()=>{
-      if(done)return;
-      done=true;
-      attemptResultResolver=null;
-      resolve();
-    };
-
-    attemptResultResolver=finish;
-    setTimeout(finish,maxMs);
+    const finish=()=>{if(done)return;done=true;attemptResolver=null;resolve()};
+    attemptResolver=finish;
+    setTimeout(finish,ms);
   });
 }
 
-
-function cueBeep(){
-  try{
-    const ctx=audioCtx || new (window.AudioContext||window.webkitAudioContext)();
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
-    osc.frequency.value=880;
-    gain.gain.setValueAtTime(0.0001,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.12,ctx.currentTime+0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.08);
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime+0.09);
-  }catch{}
-}
-
 async function doAttempt(item){
+  await ensureRecognizer();
+
   const key=item[2];
   const count=(templates[key]||[]).length+1;
 
-  await waitRecognizerReady();
-
-  attemptSeq++;
   attemptTexts=[];
   attemptActive=true;
-  window.__currentItemForRecognition=item;
 
-  title.textContent=item[2];
-  counter.textContent=`録音中　${count}/3`;
-  heard.textContent="";
   recBox.classList.add("on");
+  title.textContent=key;
+  counter.textContent=`録音中　${count}/3`;
 
-  cueBeep();
-
-  const pcm=await captureAttempt(1900);
+  // No beep. Capture begins only after the visual cue is on screen.
+  await sleep(80);
+  const pcm=await capture(1900);
 
   recBox.classList.remove("on");
   title.textContent="";
   counter.textContent="";
-  heard.textContent="";
 
-  // Googleの結果が少し遅れる場合だけ最大0.7秒待つ
-  await waitForRecognition(950);
-
+  await waitRecognition(950);
   attemptActive=false;
 
   const matched=attemptTexts.find(t=>accepted(t,item));
-
   if(!matched){
-    const judged = attemptTexts.length
-      ? attemptTexts.map(t=>norm(t)).join(" / ")
-      : "認識できませんでした";
-
-    title.textContent=judged;
-    counter.textContent="";
-    heard.textContent="";
-
-    await new Promise(r=>setTimeout(r,500));
+    title.textContent=attemptTexts.length?norm(attemptTexts[0]):"認識できませんでした";
+    await sleep(500);
     return false;
   }
 
-  const feat=fingerprint(pcm);
+  const feat=mfccSequence(pcm);
   templates[key]=templates[key]||[];
   templates[key].push(feat);
-  if(templates[key].length>3)templates[key]=templates[key].slice(0,3);
+  if(templates[key].length>3)templates[key]=templates[key].slice(-3);
 
-  save();
-  render();
+  save();render();
 
-  title.textContent=toHiraganaForItem(matched,item);
-  counter.textContent="";
-  heard.textContent="";
-
-  await new Promise(r=>setTimeout(r,500));
+  title.textContent=key;
+  await sleep(450);
   return true;
 }
 
 async function runAll(){
   if(appRunning)return;
-
   appRunning=true;
-  startBtn.disabled=true;
-  exportBtn.disabled=true;
-  clearBtn.disabled=true;
+  startBtn.disabled=exportBtn.disabled=clearBtn.disabled=true;
 
   try{
-    title.textContent="準備中";
-    counter.textContent="最初だけマイクを許可してください";
-    heard.textContent="認識結果：準備中";
-
     await ensureMic();
-    await startRecognizerOnce();
+    await ensureRecognizer();
 
     for(const item of ITEMS){
       const key=item[2];
       templates[key]=templates[key]||[];
-
       while(templates[key].length<3){
         await doAttempt(item);
-        await new Promise(r=>setTimeout(r,80));
+        await sleep(80);
       }
-
-      await new Promise(r=>setTimeout(r,100));
     }
 
     title.textContent="すべて登録完了";
-    counter.textContent="";
-    heard.textContent="JSONを書き出してください";
+    counter.textContent="JSONを書き出してください";
   }catch(e){
     console.error(e);
     recBox.classList.remove("on");
     title.textContent="エラー";
     counter.textContent=e.message||String(e);
-    heard.textContent="認識結果：―";
   }finally{
     appRunning=false;
-    startBtn.disabled=false;
-    exportBtn.disabled=false;
-    clearBtn.disabled=false;
+    startBtn.disabled=exportBtn.disabled=clearBtn.disabled=false;
   }
 }
 
 startBtn.onclick=runAll;
 
 exportBtn.onclick=()=>{
+  const calibration={};
+  for(const item of ITEMS){
+    calibration[item[2]]=classCalibration(item[2],templates);
+  }
+
   const data={
-    version:5,
-    threshold:Number(threshold.value),
+    version:FEATURE_VERSION,
     createdAt:new Date().toISOString(),
-    templates
+    feature:"mfcc12+delta-cmvn-v6",
+    templates,
+    calibration
   };
 
   const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
@@ -548,23 +675,11 @@ exportBtn.onclick=()=>{
 
 clearBtn.onclick=()=>{
   if(confirm("登録を全部消しますか？")){
-    templates={};
-    save();
-    render();
-    title.textContent="開始してください";
-    counter.textContent="";
-    heard.textContent="認識結果：―";
+    templates={};save();render();
+    title.textContent="開始してください";counter.textContent="";
   }
 };
 
-window.addEventListener("beforeunload",()=>{
-  keepRecognizerAlive=false;
-  try{recognizer?.stop()}catch{}
-  try{sharedStream?.getTracks().forEach(t=>t.stop())}catch{}
-  try{audioCtx?.close()}catch{}
-});
-
 render();
 </script>
-</body>
-</html>
+</body></html>
