@@ -36,7 +36,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v7.0・1文字ずつ判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v7.1・少し緩め</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -850,7 +850,7 @@ function kanaReferenceLimit(target,index){
   const mx=pair[pair.length-1];
 
   // 正解の自然な揺れより少し広め。これが文字単位の中心判定。
-  return Math.max(mx*1.85,med*2.10,0.38);
+  return Math.max(mx*2.00,med*2.25,0.42);
 }
 
 function recognizeKanaByKana(feat,target){
@@ -877,7 +877,7 @@ function recognizeKanaByKana(feat,target){
       !!best &&
       (
         best.label===expected ||
-        expectedScore <= best.score*1.035
+        expectedScore <= best.score*1.055
       );
 
     const absolutePass=
