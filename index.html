@@ -89,7 +89,7 @@ button:disabled{opacity:.45}
 <div class="wrap">
   <div class="card">
     <h1>て形 音声練習</h1>
-    <div class="sub">問題が出たら、て形を言ってください。</div>
+    <div class="sub">問題が出たら、て形を言ってください。正解すると自動で次へ進みます。</div>
 
     <div id="problem" class="problem">読み込み中…</div>
 
@@ -381,56 +381,62 @@ function allClasses(feat){
 }
 
 async function doAttempt(){
+  const target=ITEMS[currentIndex][1];
+
+  recordBox.classList.add("recording");
+  recordMain.textContent=target;
+  recordSub.textContent="録音中";
+  result.textContent="";
+  statusEl.textContent="";
+
+  const pcm=await recordPcm(1900);
+  const feat=fingerprint(pcm);
+
+  recordBox.classList.remove("recording");
+  recordMain.textContent="";
+  recordSub.textContent="";
+
+  const classes=allClasses(feat);
+  const best=classes[0];
+  const targetClass=classes.find(x=>x.key===target);
+
+  if(!targetClass){
+    throw new Error("この問題の正解データがありません");
+  }
+
+  // 学生と先生では声質が違うので、絶対類似度は判定に使わない。
+  // 登録済みのて形の中で「いちばん近い語」が正解語なら○。
+  const correct = !!best && best.key===target;
+
+  if(correct){
+    result.textContent="○";
+    result.className="result ok";
+
+    await new Promise(r=>setTimeout(r,550));
+    newQuestion();
+    await new Promise(r=>setTimeout(r,350));
+
+    return "next";
+  }else{
+    result.textContent="×";
+    result.className="result ng";
+
+    const nearest=best?.key || "";
+    statusEl.textContent=nearest ? `いちばん近い音：${nearest}` : "";
+
+    await new Promise(r=>setTimeout(r,750));
+    return "retry";
+  }
+}
+
+async function practiceLoop(){
   if(running)return;
   running=true;
 
   try{
-    const target=ITEMS[currentIndex][1];
-
-    recordBox.classList.add("recording");
-    recordMain.textContent=target;
-    recordSub.textContent="録音中";
-    result.textContent="";
-    statusEl.textContent="";
-
-    const pcm=await recordPcm(1900);
-    const feat=fingerprint(pcm);
-
-    recordBox.classList.remove("recording");
-    recordMain.textContent="";
-    recordSub.textContent="";
-
-    const classes=allClasses(feat);
-    const best=classes[0];
-    const targetClass=classes.find(x=>x.key===target);
-
-    if(!targetClass){
-      throw new Error("この問題の正解データがありません");
+    while(started){
+      await doAttempt();
     }
-
-    const sim=similarity(targetClass.dist);
-    const correct=
-      best &&
-      best.key===target &&
-      sim>=threshold;
-
-    if(correct){
-      result.textContent="○";
-      result.className="result ok";
-
-      await new Promise(r=>setTimeout(r,500));
-      newQuestion();
-
-      await new Promise(r=>setTimeout(r,300));
-      doAttempt();
-    }else{
-      result.textContent="×";
-      result.className="result ng";
-
-      await new Promise(r=>setTimeout(r,700));
-      doAttempt();
-    }
-
   }catch(e){
     console.error(e);
     recordBox.classList.remove("recording");
@@ -439,10 +445,15 @@ async function doAttempt(){
     statusEl.textContent=e.message||String(e);
 
     await new Promise(r=>setTimeout(r,900));
-    doAttempt();
-  }finally{
-    running=false;
+
+    if(started){
+      running=false;
+      practiceLoop();
+      return;
+    }
   }
+
+  running=false;
 }
 
 startBtn.onclick=async()=>{
@@ -457,7 +468,7 @@ startBtn.onclick=async()=>{
     newQuestion();
 
     await new Promise(r=>setTimeout(r,400));
-    doAttempt();
+    practiceLoop();
 
   }catch(e){
     startBtn.disabled=false;
