@@ -185,9 +185,9 @@ async function openMic(deviceId){
   const constraints={
     video:false,
     audio:{
-      echoCancellation:false,
-      noiseSuppression:false,
-      autoGainControl:false,
+      echoCancellation:true,
+      noiseSuppression:true,
+      autoGainControl:true,
       channelCount:1
     }
   };
@@ -351,35 +351,31 @@ function resample(x,from,to){
 }
 
 function trimVoice(x){
-  let peak=0;
-  for(const v of x)peak=Math.max(peak,Math.abs(v));
-  if(peak<=0)return x;
+  let mx=0;
+  for(const v of x)mx=Math.max(mx,Math.abs(v));
+  if(mx<.006)return x;
 
-  const w=320;
-  const th=Math.max(.0002,peak*.035);
-
+  const th=Math.max(.01,mx*.07),w=320;
   const rms=p=>{
     let s=0,n=0;
     for(let i=p;i<Math.min(x.length,p+w);i++){s+=x[i]*x[i];n++}
     return Math.sqrt(s/Math.max(1,n));
   };
 
-  let a=-1,b=-1;
-
+  let a=0,b=x.length;
   for(let p=0;p<x.length-w;p+=160){
-    if(rms(p)>th){a=Math.max(0,p-900);break}
+    if(rms(p)>th){a=Math.max(0,p-640);break}
   }
-
   for(let p=x.length-w;p>0;p-=160){
-    if(rms(p)>th){b=Math.min(x.length,p+w+900);break}
+    if(rms(p)>th){b=Math.min(x.length,p+w+640);break}
   }
 
-  return (a>=0&&b>a)?x.slice(a,b):x;
+  return x.slice(a,b);
 }
 
 function fingerprint(x){
   x=trimVoice(x);
-  if(x.length<800)throw new Error("録音が短すぎます");
+  if(x.length<1500)throw new Error("声が短すぎます");
 
   const F=28,B=18,N=256,out=[];
 
@@ -421,46 +417,123 @@ function fingerprint(x){
 
 function frameDist(a,b){
   let s=0;
-  for(let i=0;i<a.length;i++){const d=a[i]-b[i];s+=d*d}
+  for(let i=0;i<a.length;i++){
+    const d=a[i]-b[i];
+    s+=d*d;
+  }
   return Math.sqrt(s/a.length);
 }
 
-function dtw(A,B){
+// One distance matrix per query/reference pair.
+// Then test a small number of start/end crops cheaply.
+// This specifically tolerates the old teacher JSON where the cue beep may
+// have occupied the first few reference frames.
+function flexibleDtw(A,B){
   const n=A.length,m=B.length;
-  const prev=new Float64Array(m+1);
-  prev.fill(Infinity);prev[0]=0;
+  if(!n||!m)return Infinity;
 
-  for(let i=1;i<=n;i++){
-    const cur=new Float64Array(m+1);
-    cur.fill(Infinity);
-
-    for(let j=1;j<=m;j++){
-      const cost=frameDist(A[i-1],B[j-1]);
-      cur[j]=cost+Math.min(cur[j-1],prev[j],prev[j-1]);
+  const D=Array.from({length:n},()=>new Float64Array(m));
+  for(let i=0;i<n;i++){
+    for(let j=0;j<m;j++){
+      D[i][j]=frameDist(A[i],B[j]);
     }
-
-    prev.set(cur);
   }
 
-  return prev[m]/(n+m);
+  let globalBest=Infinity;
+
+  // Query may have 0-2 leading frames of silence.
+  // Reference may have 0-5 leading frames containing the old cue sound.
+  for(let a0=0;a0<=Math.min(2,n-5);a0++){
+    for(let b0=0;b0<=Math.min(5,m-5);b0++){
+      for(let aTail=0;aTail<=Math.min(1,n-a0-5);aTail++){
+        for(let bTail=0;bTail<=Math.min(2,m-b0-5);bTail++){
+          const a1=n-aTail;
+          const b1=m-bTail;
+          const rows=a1-a0, cols=b1-b0;
+          if(rows<5||cols<5)continue;
+
+          const prev=new Float64Array(cols+1);
+          prev.fill(Infinity);
+          prev[0]=0;
+
+          for(let ii=1;ii<=rows;ii++){
+            const cur=new Float64Array(cols+1);
+            cur.fill(Infinity);
+
+            for(let jj=1;jj<=cols;jj++){
+              const cost=D[a0+ii-1][b0+jj-1];
+              cur[jj]=cost+Math.min(
+                cur[jj-1],
+                prev[jj],
+                prev[jj-1]
+              );
+            }
+            prev.set(cur);
+          }
+
+          // Normalize by approximate alignment length.
+          const normalized=prev[cols]/(rows+cols);
+
+          // Tiny penalty prevents needless large cropping.
+          const skipPenalty=(a0+b0+aTail+bTail)*0.0025;
+          const score=normalized+skipPenalty;
+
+          if(score<globalBest)globalBest=score;
+        }
+      }
+    }
+  }
+
+  return globalBest;
 }
 
-function nearestClass(feat){
-  const classes=[];
+function classScores(feat){
+  const scores=[];
 
   for(const [key,refs] of Object.entries(templates)){
     if(!Array.isArray(refs)||!refs.length)continue;
 
-    let best=Infinity;
+    const ds=[];
     for(const ref of refs){
-      try{best=Math.min(best,dtw(feat,ref))}catch{}
+      try{
+        ds.push(flexibleDtw(feat,ref));
+      }catch{}
     }
 
-    classes.push({key,dist:best});
+    if(!ds.length)continue;
+    ds.sort((a,b)=>a-b);
+
+    // 3 recordings exist. Use the best two, so one bad reference
+    // does not ruin the class.
+    const use=Math.min(2,ds.length);
+    let score=0;
+    for(let i=0;i<use;i++)score+=ds[i];
+    score/=use;
+
+    scores.push({key,score});
   }
 
-  classes.sort((a,b)=>a.dist-b.dist);
-  return classes[0]||null;
+  scores.sort((a,b)=>a.score-b.score);
+  return scores;
+}
+
+function judgeTarget(feat,target){
+  const scores=classScores(feat);
+  if(!scores.length)return {correct:false,best:null,rank:-1,target:null};
+
+  const rank=scores.findIndex(x=>x.key===target);
+  const targetObj=rank>=0?scores[rank]:null;
+  const best=scores[0];
+
+  if(!targetObj)return {correct:false,best,rank:-1,target:null};
+
+  // Primary rule: target is the closest class.
+  // If it is a nearly-tied 2nd place, accept it as well. This handles
+  // acoustically very close pairs such as みて / きて.
+  const ratio=targetObj.score/(best.score||1e-9);
+  const correct=(rank===0)||(rank===1 && ratio<=1.045);
+
+  return {correct,best,rank,target:targetObj,ratio,scores};
 }
 
 async function attempt(){
@@ -469,13 +542,15 @@ async function attempt(){
   result.textContent="";
   statusEl.textContent="";
 
-  await sleep(600);
+  // Give the learner time to see the problem.
+  await sleep(500);
 
   recordBox.classList.add("recording");
   recordMain.textContent="録音中";
   recordSub.textContent="いま言ってください";
 
-  const raw=await capturePcm(2200);
+  // Same duration family as teacher reference capture (1.9 sec).
+  const raw=await capturePcm(1900);
 
   recordBox.classList.remove("recording");
   recordMain.textContent="";
@@ -483,24 +558,30 @@ async function attempt(){
 
   const pcm16=resample(raw.pcm,raw.sampleRate,16000);
   const feat=fingerprint(pcm16);
-  const best=nearestClass(feat);
+  const judged=judgeTarget(feat,target);
 
-  if(!best)throw new Error("正解データがありません");
+  if(!judged.best){
+    throw new Error("正解データがありません");
+  }
 
+  // Keep technical data small, but useful if we need one more diagnostic.
   tech.textContent=
-    `使用中: ${track?.label||"マイク"} / peak=${raw.peak.toFixed(4)} / `+
-    `frames=${raw.callbacks} / 最接近=${best.key}`;
+    `使用中: ${track?.label||"マイク"} / `+
+    `peak=${raw.peak.toFixed(4)} / `+
+    `目標=${target} / 最接近=${judged.best.key} / `+
+    `目標順位=${judged.rank+1} / `+
+    `比=${Number.isFinite(judged.ratio)?judged.ratio.toFixed(3):"-"}`;
 
-  if(best.key===target){
+  if(judged.correct){
     result.textContent="○";
     result.className="result ok";
-    await sleep(600);
+    await sleep(550);
     newQuestion();
   }else{
     result.textContent="×";
     result.className="result ng";
-    statusEl.textContent=`いちばん近い音：${best.key}`;
-    await sleep(850);
+    statusEl.textContent=`いちばん近い音：${judged.best.key}`;
+    await sleep(800);
   }
 }
 
