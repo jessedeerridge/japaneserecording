@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.5・最接近判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.6・少し厳しく</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -727,16 +727,23 @@ function judge(feat,target){
   const second=scores[1]||null;
   const targetObj=scores.find(x=>x.key===target)||null;
 
-  // 判定はこれだけ。
-  // 実際の音声比較で正解語が最も近いなら○。
-  const correct = best.key===target;
+  // 正解語が1位であることは必須。
+  if(best.key!==target){
+    return {correct:false,best,second,targetObj,scores,ratio:null};
+  }
+
+  // 少しだけ厳しくする。
+  // 2位とほぼ同じ距離なら、たまたま1位になっただけなので×。
+  const ratio = second ? best.score/(second.score||1e-9) : 0;
+  const clearEnough = !second || ratio <= 0.985;
 
   return {
-    correct,
+    correct: clearEnough,
     best,
     second,
     targetObj,
-    scores
+    scores,
+    ratio
   };
 }
 
