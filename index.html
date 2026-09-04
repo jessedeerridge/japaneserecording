@@ -6,489 +6,364 @@
 <title>て形 音声練習</title>
 <style>
 *{box-sizing:border-box}
-body{
-  margin:0;background:#f4f4f4;color:#111;
-  font-family:system-ui,-apple-system,"Noto Sans JP","Yu Gothic",sans-serif
-}
-.wrap{width:min(640px,94vw);margin:24px auto 60px}
-.card{
-  background:#fff;border:1px solid #ddd;border-radius:20px;
-  padding:24px;box-shadow:0 5px 18px rgba(0,0,0,.06);text-align:center
-}
-h1{font-size:23px;margin:0 0 8px}
-.sub{font-size:13px;color:#666;margin-bottom:18px}
-.problem{
-  font-size:54px;font-weight:900;min-height:110px;
-  display:flex;align-items:center;justify-content:center;
-  border:2px solid #222;border-radius:18px;margin-bottom:16px
-}
-.recordBox{
-  min-height:170px;border:3px solid #111;border-radius:18px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:18px;transition:background .18s,color .18s
-}
-.recordBox.recording{background:#111;color:#fff}
-.recordMain{font-size:28px;font-weight:900}
-.recordSub{font-size:15px;margin-top:7px}
-.meter{
-  width:min(320px,86%);height:12px;border:1px solid currentColor;
-  border-radius:999px;margin-top:15px;overflow:hidden
-}
-.meterFill{height:100%;width:0;background:currentColor}
-.result{min-height:44px;margin-top:14px;font-size:30px;font-weight:900}
-.ok{color:#087f23}.ng{color:#c62828}
+body{margin:0;background:#f4f4f4;color:#111;font-family:system-ui,-apple-system,"Noto Sans JP","Yu Gothic",sans-serif}
+.wrap{width:min(620px,94vw);margin:24px auto 60px}
+.card{background:#fff;border:1px solid #ddd;border-radius:20px;padding:24px;box-shadow:0 5px 18px rgba(0,0,0,.06);text-align:center}
+h1{font-size:23px;margin:0 0 8px}.sub{font-size:13px;color:#666;margin-bottom:18px}
+.problem{font-size:54px;font-weight:900;min-height:110px;display:flex;align-items:center;justify-content:center;border:2px solid #222;border-radius:18px;margin-bottom:16px}
+.recordBox{min-height:155px;border:3px solid #111;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;transition:background .15s,color .15s}
+.recordBox.recording{background:#111;color:#fff}.recordMain{font-size:28px;font-weight:900}.recordSub{font-size:15px;margin-top:7px}
+.result{min-height:44px;margin-top:14px;font-size:30px;font-weight:900}.ok{color:#087f23}.ng{color:#c62828}
 .status{min-height:22px;margin-top:8px;font-size:14px;color:#666}
-.micPanel{
-  display:none;margin-top:14px;padding:14px;border:1px solid #ccc;
-  border-radius:14px;text-align:left;background:#fafafa
-}
-.micPanel.show{display:block}
-.micPanel label{font-size:13px;color:#555}
-.micRow{display:flex;gap:8px;margin-top:7px}
-select{
-  flex:1;min-width:0;padding:10px;border:1px solid #aaa;
-  border-radius:10px;background:#fff;font-size:14px
-}
-button{
-  border:0;border-radius:13px;padding:13px 18px;
-  font-size:16px;font-weight:700;cursor:pointer
-}
-.primary{background:#111;color:#fff}
-.light{background:#e9e9e9}
-button:disabled{opacity:.45}
-.hidden{display:none}
-.tech{margin-top:7px;font-size:11px;color:#999;word-break:break-word}
+button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:700;cursor:pointer}.primary{background:#111;color:#fff}.hidden{display:none}
+.debug{display:none;margin-top:7px;font-size:11px;color:#888}.debug.show{display:block}
 </style>
 </head>
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
 <div class="sub">問題が出たら、て形を言ってください。</div>
-
 <div id="problem" class="problem">読み込み中…</div>
-
 <div id="recordBox" class="recordBox">
-  <div id="recordMain" class="recordMain">準備中</div>
-  <div id="recordSub" class="recordSub"></div>
-  <div class="meter"><div id="meterFill" class="meterFill"></div></div>
+<div id="recordMain" class="recordMain">準備中</div>
+<div id="recordSub" class="recordSub"></div>
 </div>
-
 <div id="result" class="result"></div>
 <div id="status" class="status"></div>
-
-<div id="micPanel" class="micPanel">
-  <label>使用するマイク</label>
-  <div class="micRow">
-    <select id="micSelect"></select>
-    <button id="changeMic" class="light">変更</button>
-  </div>
-  <div id="tech" class="tech"></div>
-</div>
-
+<div id="debug" class="debug"></div>
 <button id="startBtn" class="primary hidden">開始</button>
 </div></div>
 
 <script>
 const ITEMS=[
-["書きます","かいて"],["聞きます","きいて"],["読みます","よんで"],
-["飲みます","のんで"],["話します","はなして"],["食べます","たべて"],
-["見ます","みて"],["起きます","おきて"],["寝ます","ねて"],
-["行きます","いって"],["買います","かって"],["待ちます","まって"],
+["書きます","かいて"],["聞きます","きいて"],["読みます","よんで"],["飲みます","のんで"],
+["話します","はなして"],["食べます","たべて"],["見ます","みて"],["起きます","おきて"],
+["寝ます","ねて"],["行きます","いって"],["買います","かって"],["待ちます","まって"],
 ["遊びます","あそんで"],["泳ぎます","およいで"],["します","して"],["来ます","きて"]
 ];
 
 const $=s=>document.querySelector(s);
 const problem=$("#problem"),recordBox=$("#recordBox"),recordMain=$("#recordMain"),
-recordSub=$("#recordSub"),meterFill=$("#meterFill"),result=$("#result"),
-statusEl=$("#status"),startBtn=$("#startBtn"),micPanel=$("#micPanel"),
-micSelect=$("#micSelect"),changeMic=$("#changeMic"),tech=$("#tech");
+recordSub=$("#recordSub"),result=$("#result"),statusEl=$("#status"),
+startBtn=$("#startBtn"),debugEl=$("#debug");
 
-let templates={};
-let currentIndex=0;
-let stream=null,track=null,audioCtx=null,source=null,analyser=null,monitorGain=null;
-let devices=[];
-let started=false,running=false;
-let livePeak=0;
-let meterRAF=0;
+const DEBUG=new URLSearchParams(location.search).get("debug")==="1";
+if(DEBUG)debugEl.classList.add("show");
 
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let templates={},calibration={};
+let stream=null,audioCtx=null;
+let currentIndex=0,started=false,running=false;
 
-async function loadTemplates(){
-  const res=await fetch("./voice_templates.json?v="+Date.now(),{cache:"no-store"});
-  if(!res.ok)throw new Error("voice_templates.json を読み込めません");
-  const data=await res.json();
-  templates=data.templates||data;
-  classLimitCache={};
-}
 
-function newQuestion(){
-  let n;
-  do{n=Math.floor(Math.random()*ITEMS.length)}
-  while(n===currentIndex&&ITEMS.length>1);
-  currentIndex=n;
-  problem.textContent=ITEMS[n][0];
-  result.textContent="";
-  statusEl.textContent="";
-}
+const FEATURE_VERSION=6;
+const TARGET_SR=16000;
 
-function micScore(label){
-  const s=(label||"").toLowerCase();
-  let score=0;
-  if(/microphone|マイク|麦克风|mic\b/.test(s))score+=10;
-  if(/array|内蔵|built.?in|internal/.test(s))score+=3;
-  if(/stereo mix|what u hear|loopback|virtual|cable|立体声混音/.test(s))score-=20;
-  return score;
-}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
 
-async function refreshDevices(){
-  const all=await navigator.mediaDevices.enumerateDevices();
-  devices=all.filter(d=>d.kind==="audioinput");
-
-  micSelect.innerHTML="";
-  devices.forEach((d,i)=>{
-    const op=document.createElement("option");
-    op.value=d.deviceId;
-    op.textContent=d.label||`マイク ${i+1}`;
-    micSelect.appendChild(op);
-  });
-}
-
-async function initialPermissionAndBestMic(){
-  const first=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-  const firstTrack=first.getAudioTracks()[0];
-  const firstId=firstTrack?.getSettings?.().deviceId||"";
-
-  await refreshDevices();
-
-  let bestId=firstId;
-  let bestScore=-999;
-
-  for(const d of devices){
-    const sc=micScore(d.label);
-    if(sc>bestScore){
-      bestScore=sc;
-      bestId=d.deviceId;
-    }
+function resample(x,from,to=TARGET_SR){
+  if(from===to)return new Float32Array(x);
+  const len=Math.max(1,Math.round(x.length*to/from));
+  const out=new Float32Array(len);
+  for(let i=0;i<len;i++){
+    const p=i*from/to;
+    const a=Math.floor(p);
+    const b=Math.min(x.length-1,a+1);
+    const t=p-a;
+    out[i]=x[a]*(1-t)+x[b]*t;
   }
-
-  // 明確に「マイク」と判断できる候補がないならブラウザ既定を優先
-  if(bestScore<1 && firstId)bestId=firstId;
-
-  first.getTracks().forEach(t=>t.stop());
-
-  if(bestId)micSelect.value=bestId;
-  await openMic(bestId||null);
-}
-
-async function openMic(deviceId){
-  stopMic();
-
-  const constraints={
-    video:false,
-    audio:{
-      echoCancellation:true,
-      noiseSuppression:true,
-      autoGainControl:true,
-      channelCount:1
-    }
-  };
-
-  if(deviceId){
-    constraints.audio.deviceId={exact:deviceId};
-  }
-
-  stream=await navigator.mediaDevices.getUserMedia(constraints);
-  track=stream.getAudioTracks()[0];
-
-  if(!track)throw new Error("音声トラックを取得できません");
-
-  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  if(audioCtx.state==="suspended")await audioCtx.resume();
-
-  source=audioCtx.createMediaStreamSource(stream);
-  analyser=audioCtx.createAnalyser();
-  analyser.fftSize=1024;
-  analyser.smoothingTimeConstant=.15;
-
-  // 0だと一部環境でグラフが休止される可能性があるため、
-  // 聞こえない程度の極小値でdestinationまでつなぐ。
-  monitorGain=audioCtx.createGain();
-  monitorGain.gain.value=0.000001;
-
-  source.connect(analyser);
-  analyser.connect(monitorGain);
-  monitorGain.connect(audioCtx.destination);
-
-  startMeter();
-
-  const st=track.getSettings?.()||{};
-  const label=track.label||"名称不明";
-  tech.textContent=
-    `使用中: ${label} / state=${track.readyState} / muted=${track.muted} / `+
-    `${Math.round(audioCtx.sampleRate)}Hz`;
-
-  const match=devices.find(d=>d.deviceId===st.deviceId);
-  if(match)micSelect.value=match.deviceId;
-
-  track.onmute=()=>{
-    tech.textContent=`使用中: ${label} / マイクがmutedになっています`;
-  };
-}
-
-function stopMic(){
-  cancelAnimationFrame(meterRAF);
-  try{source?.disconnect()}catch{}
-  try{analyser?.disconnect()}catch{}
-  try{monitorGain?.disconnect()}catch{}
-  try{stream?.getTracks().forEach(t=>t.stop())}catch{}
-  try{audioCtx?.close()}catch{}
-
-  stream=track=audioCtx=source=analyser=monitorGain=null;
-  meterFill.style.width="0%";
-}
-
-function startMeter(){
-  cancelAnimationFrame(meterRAF);
-  const buf=new Float32Array(analyser.fftSize);
-
-  const tick=()=>{
-    if(!analyser)return;
-
-    analyser.getFloatTimeDomainData(buf);
-
-    let peak=0;
-    for(let i=0;i<buf.length;i++){
-      const a=Math.abs(buf[i]);
-      if(a>peak)peak=a;
-    }
-
-    livePeak=peak;
-    const pct=Math.min(100,Math.round(Math.sqrt(peak)*180));
-    meterFill.style.width=pct+"%";
-
-    meterRAF=requestAnimationFrame(tick);
-  };
-
-  tick();
-}
-
-function concat(parts){
-  const total=parts.reduce((n,a)=>n+a.length,0);
-  const out=new Float32Array(total);
-  let p=0;
-  for(const a of parts){out.set(a,p);p+=a.length}
   return out;
 }
 
-// 先生用で実際に登録できた方式をそのまま使う
-async function capturePcm(ms=2200){
-  if(!stream||!stream.active||!audioCtx||!source){
-    throw new Error("マイクが準備されていません");
-  }
+function extractSpeech(x,sr=TARGET_SR){
+  const frame=Math.round(sr*.02);
+  const hop=Math.round(sr*.01);
+  const rms=[];
 
-  if(audioCtx.state==="suspended"){
-    await audioCtx.resume();
-  }
-
-  const proc=audioCtx.createScriptProcessor(2048,1,1);
-  const sink=audioCtx.createGain();
-  sink.gain.value=0.000001;
-  const parts=[];
-  let peak=0;
-  let callbacks=0;
-
-  proc.onaudioprocess=e=>{
-    callbacks++;
-    const ch=e.inputBuffer.getChannelData(0);
-    const copy=new Float32Array(ch.length);
-    copy.set(ch);
-    parts.push(copy);
-
-    for(let i=0;i<ch.length;i++){
-      const a=Math.abs(ch[i]);
-      if(a>peak)peak=a;
+  for(let p=0;p+frame<=x.length;p+=hop){
+    let s=0;
+    for(let i=0;i<frame;i++){
+      const v=x[p+i];
+      s+=v*v;
     }
-  };
-
-  // 同じマイクsourceから録音枝を追加
-  source.connect(proc);
-  proc.connect(sink);
-  sink.connect(audioCtx.destination);
-
-  await sleep(ms);
-
-  try{source.disconnect(proc)}catch{}
-  try{proc.disconnect()}catch{}
-  try{sink.disconnect()}catch{}
-
-  const raw=concat(parts);
-
-  if(callbacks===0||raw.length===0){
-    const err=new Error("録音処理に音声フレームが届いていません");
-    err.code="NO_FRAMES";
-    throw err;
+    rms.push(Math.sqrt(s/frame));
   }
 
-  if(peak<0.00001){
-    const err=new Error("このマイクから音が来ていません");
-    err.code="ZERO_INPUT";
-    throw err;
+  if(!rms.length)throw new Error("録音が短すぎます");
+
+  const sorted=[...rms].sort((a,b)=>a-b);
+  const noise=sorted[Math.floor(sorted.length*.20)]||0;
+  const peak=Math.max(...rms);
+
+  if(peak<0.0012)throw new Error("声が聞こえません");
+
+  const th=Math.max(noise*1.8,peak*.055,0.0008);
+  const voiced=[];
+
+  for(let i=0;i<rms.length;i++){
+    if(rms[i]>=th)voiced.push(i);
   }
 
-  return {pcm:raw,sampleRate:audioCtx.sampleRate,peak,callbacks};
+  if(voiced.length<3)throw new Error("声が短すぎます");
+
+  let first=Math.max(0,voiced[0]-7);
+  let last=Math.min(rms.length-1,voiced[voiced.length-1]+9);
+
+  let a=first*hop;
+  let b=Math.min(x.length,last*hop+frame);
+
+  if(b-a<Math.round(sr*.18))throw new Error("声が短すぎます");
+
+  const y=x.slice(a,b);
+
+  // DC removal + gentle pre-emphasis.
+  let mean=0;
+  for(const v of y)mean+=v;
+  mean/=Math.max(1,y.length);
+
+  const out=new Float32Array(y.length);
+  let prev=0;
+  for(let i=0;i<y.length;i++){
+    const cur=y[i]-mean;
+    out[i]=i===0 ? cur : cur-.97*prev;
+    prev=cur;
+  }
+
+  // RMS normalization. Feature extraction later removes remaining channel bias.
+  let s=0;
+  for(const v of out)s+=v*v;
+  const rr=Math.sqrt(s/Math.max(1,out.length))||1;
+  const gain=Math.min(20,.08/rr);
+  for(let i=0;i<out.length;i++)out[i]*=gain;
+
+  return out;
 }
 
-function resample(x,from,to){
-  if(from===to)return x;
-  const len=Math.max(1,Math.round(x.length*to/from));
-  const o=new Float32Array(len);
+function fftMagPower(frame){
+  const N=512;
+  const re=new Float64Array(N);
+  const im=new Float64Array(N);
 
-  for(let i=0;i<len;i++){
-    const p=i*from/to,a=Math.floor(p),b=Math.min(x.length-1,a+1),t=p-a;
-    o[i]=x[a]*(1-t)+x[b]*t;
+  for(let i=0;i<frame.length && i<N;i++)re[i]=frame[i];
+
+  // bit reversal
+  for(let i=1,j=0;i<N;i++){
+    let bit=N>>1;
+    for(;j&bit;bit>>=1)j^=bit;
+    j^=bit;
+    if(i<j){
+      const tr=re[i];re[i]=re[j];re[j]=tr;
+    }
   }
 
-  return o;
+  for(let len=2;len<=N;len<<=1){
+    const ang=-2*Math.PI/len;
+    const wlenR=Math.cos(ang),wlenI=Math.sin(ang);
+
+    for(let i=0;i<N;i+=len){
+      let wr=1,wi=0;
+      const half=len>>1;
+
+      for(let j=0;j<half;j++){
+        const uR=re[i+j],uI=im[i+j];
+        const k=i+j+half;
+        const vR=re[k]*wr-im[k]*wi;
+        const vI=re[k]*wi+im[k]*wr;
+
+        re[i+j]=uR+vR;
+        im[i+j]=uI+vI;
+        re[k]=uR-vR;
+        im[k]=uI-vI;
+
+        const nwr=wr*wlenR-wi*wlenI;
+        wi=wr*wlenI+wi*wlenR;
+        wr=nwr;
+      }
+    }
+  }
+
+  const p=new Float64Array(N/2+1);
+  for(let i=0;i<p.length;i++)p[i]=re[i]*re[i]+im[i]*im[i];
+  return p;
 }
 
-function trimVoice(x){
-  let mx=0;
-  for(const v of x)mx=Math.max(mx,Math.abs(v));
-  if(mx<.006)return x;
+function hzToMel(hz){return 2595*Math.log10(1+hz/700)}
+function melToHz(m){return 700*(Math.pow(10,m/2595)-1)}
 
-  const th=Math.max(.01,mx*.07),w=320;
-  const rms=p=>{
-    let s=0,n=0;
-    for(let i=p;i<Math.min(x.length,p+w);i++){s+=x[i]*x[i];n++}
-    return Math.sqrt(s/Math.max(1,n));
-  };
+let MEL_BANK=null;
+function getMelBank(){
+  if(MEL_BANK)return MEL_BANK;
 
-  let a=0,b=x.length;
-  for(let p=0;p<x.length-w;p+=160){
-    if(rms(p)>th){a=Math.max(0,p-640);break}
-  }
-  for(let p=x.length-w;p>0;p-=160){
-    if(rms(p)>th){b=Math.min(x.length,p+w+640);break}
+  const NFFT=512;
+  const nFilters=26;
+  const minHz=80,maxHz=7600;
+  const minMel=hzToMel(minHz),maxMel=hzToMel(maxHz);
+  const hz=[];
+
+  for(let i=0;i<nFilters+2;i++){
+    hz.push(melToHz(minMel+(maxMel-minMel)*i/(nFilters+1)));
   }
 
-  return x.slice(a,b);
+  const bins=hz.map(h=>Math.max(0,Math.min(NFFT/2,Math.floor((NFFT+1)*h/TARGET_SR))));
+  const bank=[];
+
+  for(let m=1;m<=nFilters;m++){
+    const weights=[];
+    const l=bins[m-1],c=bins[m],r=bins[m+1];
+
+    for(let k=l;k<=r;k++){
+      let w=0;
+      if(k<c)w=(k-l)/Math.max(1,c-l);
+      else if(k>c)w=(r-k)/Math.max(1,r-c);
+      else w=1;
+
+      if(w>0)weights.push([k,w]);
+    }
+    bank.push(weights);
+  }
+
+  MEL_BANK=bank;
+  return bank;
 }
 
-function fingerprint(x){
-  x=trimVoice(x);
-  if(x.length<1500)throw new Error("声が短すぎます");
+function mfccSequence(raw){
+  const x=extractSpeech(raw,TARGET_SR);
+  const frameSize=400; // 25 ms
+  const hop=160;       // 10 ms
+  const bank=getMelBank();
+  const staticSeq=[];
 
-  const F=28,B=18,N=256,out=[];
+  for(let p=0;p+frameSize<=x.length;p+=hop){
+    const fr=new Float64Array(512);
 
-  for(let f=0;f<F;f++){
-    const st=Math.max(0,Math.min(
-      Math.max(0,x.length-N-1),
-      Math.floor((f+.5)/F*x.length-N/2)
-    ));
+    for(let i=0;i<frameSize;i++){
+      const win=.54-.46*Math.cos(2*Math.PI*i/(frameSize-1));
+      fr[i]=x[p+i]*win;
+    }
 
+    const pow=fftMagPower(fr);
+    const logs=[];
+
+    for(const filt of bank){
+      let e=0;
+      for(const [k,w] of filt)e+=pow[k]*w;
+      logs.push(Math.log(e+1e-10));
+    }
+
+    // MFCC 1..12. c0 is intentionally omitted.
+    const row=[];
+    const M=logs.length;
+    for(let c=1;c<=12;c++){
+      let s=0;
+      for(let m=0;m<M;m++){
+        s+=logs[m]*Math.cos(Math.PI*c*(m+.5)/M);
+      }
+      row.push(s);
+    }
+    staticSeq.push(row);
+  }
+
+  if(staticSeq.length<6)throw new Error("声が短すぎます");
+
+  // Cepstral mean/variance normalization per utterance.
+  const T=staticSeq.length,D=12;
+  const mean=new Float64Array(D);
+  const sd=new Float64Array(D);
+
+  for(const row of staticSeq){
+    for(let d=0;d<D;d++)mean[d]+=row[d];
+  }
+  for(let d=0;d<D;d++)mean[d]/=T;
+
+  for(const row of staticSeq){
+    for(let d=0;d<D;d++){
+      const z=row[d]-mean[d];
+      sd[d]+=z*z;
+    }
+  }
+  for(let d=0;d<D;d++)sd[d]=Math.sqrt(sd[d]/T)||1;
+
+  const norm=staticSeq.map(row=>row.map((v,d)=>(v-mean[d])/sd[d]));
+  const out=[];
+
+  for(let t=0;t<T;t++){
+    const prev=norm[Math.max(0,t-2)];
+    const next=norm[Math.min(T-1,t+2)];
     const row=[];
 
-    for(let b=0;b<B;b++){
-      const fr=180*Math.pow(4200/180,b/(B-1));
-      const w=2*Math.PI*fr/16000;
-      let re=0,im=0;
+    for(let d=0;d<D;d++)row.push(norm[t][d]);
+    for(let d=0;d<D;d++)row.push((next[d]-prev[d])*.25);
 
-      for(let n=0;n<N;n++){
-        const win=.5-.5*Math.cos(2*Math.PI*n/(N-1));
-        const v=(x[st+n]||0)*win;
-        re+=v*Math.cos(w*n);
-        im-=v*Math.sin(w*n);
-      }
-
-      row.push(Math.log(1e-7+re*re+im*im));
-    }
-
-    const mean=row.reduce((a,b)=>a+b,0)/B;
-    let ss=0;
-    for(let b=0;b<B;b++){row[b]-=mean;ss+=row[b]*row[b]}
-
-    const sd=Math.sqrt(ss/B)||1;
-    for(let b=0;b<B;b++)row[b]/=sd;
-
-    out.push(row);
+    out.push(row.map(v=>Math.round(v*1000)/1000));
   }
 
   return out;
 }
 
-function frameDist(a,b){
-  let s=0;
-  for(let i=0;i<a.length;i++){
-    const d=a[i]-b[i];
-    s+=d*d;
+function frameDistance(a,b){
+  const D=Math.min(a.length,b.length);
+  let staticS=0,deltaS=0;
+  const half=Math.min(12,D);
+
+  for(let d=0;d<half;d++){
+    const q=a[d]-b[d];
+    staticS+=q*q;
   }
-  return Math.sqrt(s/a.length);
+  for(let d=12;d<D;d++){
+    const q=a[d]-b[d];
+    deltaS+=q*q;
+  }
+
+  const st=Math.sqrt(staticS/Math.max(1,half));
+  const de=Math.sqrt(deltaS/Math.max(1,D-12));
+  return st*.72+de*.28;
 }
 
-// One distance matrix per query/reference pair.
-// Then test a small number of start/end crops cheaply.
-// This specifically tolerates the old teacher JSON where the cue beep may
-// have occupied the first few reference frames.
-function flexibleDtw(A,B){
+function dtw(A,B){
   const n=A.length,m=B.length;
   if(!n||!m)return Infinity;
 
-  const D=Array.from({length:n},()=>new Float64Array(m));
-  for(let i=0;i<n;i++){
-    for(let j=0;j<m;j++){
-      D[i][j]=frameDist(A[i],B[j]);
-    }
-  }
+  // Prevent pathological warping.
+  const band=Math.max(8,Math.ceil(Math.max(n,m)*.38));
+  const prev=new Float64Array(m+1);
+  const prevLen=new Uint16Array(m+1);
+  prev.fill(Infinity);
+  prev[0]=0;
 
-  let globalBest=Infinity;
+  for(let i=1;i<=n;i++){
+    const cur=new Float64Array(m+1);
+    const curLen=new Uint16Array(m+1);
+    cur.fill(Infinity);
 
-  // Query may have 0-2 leading frames of silence.
-  // Reference may have 0-5 leading frames containing the old cue sound.
-  for(let a0=0;a0<=Math.min(2,n-5);a0++){
-    for(let b0=0;b0<=Math.min(5,m-5);b0++){
-      for(let aTail=0;aTail<=Math.min(1,n-a0-5);aTail++){
-        for(let bTail=0;bTail<=Math.min(2,m-b0-5);bTail++){
-          const a1=n-aTail;
-          const b1=m-bTail;
-          const rows=a1-a0, cols=b1-b0;
-          if(rows<5||cols<5)continue;
+    const center=i*m/n;
+    const j0=Math.max(1,Math.floor(center-band));
+    const j1=Math.min(m,Math.ceil(center+band));
 
-          const prev=new Float64Array(cols+1);
-          prev.fill(Infinity);
-          prev[0]=0;
+    for(let j=j0;j<=j1;j++){
+      const c=frameDistance(A[i-1],B[j-1]);
 
-          for(let ii=1;ii<=rows;ii++){
-            const cur=new Float64Array(cols+1);
-            cur.fill(Infinity);
+      let best=prev[j-1],bl=prevLen[j-1];
 
-            for(let jj=1;jj<=cols;jj++){
-              const cost=D[a0+ii-1][b0+jj-1];
-              cur[jj]=cost+Math.min(
-                cur[jj-1],
-                prev[jj],
-                prev[jj-1]
-              );
-            }
-            prev.set(cur);
-          }
+      if(prev[j]<best){
+        best=prev[j];bl=prevLen[j];
+      }
+      if(cur[j-1]<best){
+        best=cur[j-1];bl=curLen[j-1];
+      }
 
-          // Normalize by approximate alignment length.
-          const normalized=prev[cols]/(rows+cols);
-
-          // Tiny penalty prevents needless large cropping.
-          const skipPenalty=(a0+b0+aTail+bTail)*0.0025;
-          const score=normalized+skipPenalty;
-
-          if(score<globalBest)globalBest=score;
-        }
+      if(Number.isFinite(best)){
+        cur[j]=best+c;
+        curLen[j]=bl+1;
       }
     }
+
+    prev.set(cur);
+    prevLen.set(curLen);
   }
 
-  return globalBest;
+  return prev[m]/Math.max(1,prevLen[m]);
 }
 
-function classScores(feat){
+function classScores(feat,templates){
   const scores=[];
 
   for(const [key,refs] of Object.entries(templates)){
@@ -497,19 +372,17 @@ function classScores(feat){
     const ds=[];
     for(const ref of refs){
       try{
-        ds.push(flexibleDtw(feat,ref));
+        const d=dtw(feat,ref);
+        if(Number.isFinite(d))ds.push(d);
       }catch{}
     }
-
     if(!ds.length)continue;
-    ds.sort((a,b)=>a-b);
 
-    // 3 recordings exist. Use the best two, so one bad reference
-    // does not ruin the class.
-    const use=Math.min(2,ds.length);
+    ds.sort((a,b)=>a-b);
+    const take=Math.min(2,ds.length);
     let score=0;
-    for(let i=0;i<use;i++)score+=ds[i];
-    score/=use;
+    for(let i=0;i<take;i++)score+=ds[i];
+    score/=take;
 
     scores.push({key,score});
   }
@@ -518,77 +391,143 @@ function classScores(feat){
   return scores;
 }
 
-let classLimitCache={};
-
-function median(arr){
-  if(!arr.length)return Infinity;
-  const a=[...arr].sort((x,y)=>x-y);
-  const m=Math.floor(a.length/2);
-  return a.length%2 ? a[m] : (a[m-1]+a[m])/2;
-}
-
-// 正解録音3回どうしの距離から、その語の「正解として許せる範囲」を自動計算。
-// 一律のゆるい閾値ではなく、語ごとに厳しさを変える。
-function classLimit(key){
-  if(classLimitCache[key])return classLimitCache[key];
-
+function classCalibration(key,templates){
   const refs=templates[key]||[];
-  const pair=[];
+  const within=[];
 
   for(let i=0;i<refs.length;i++){
     for(let j=i+1;j<refs.length;j++){
-      try{
-        const d=flexibleDtw(refs[i],refs[j]);
-        if(Number.isFinite(d))pair.push(d);
-      }catch{}
+      const d=dtw(refs[i],refs[j]);
+      if(Number.isFinite(d))within.push(d);
     }
   }
 
-  // 登録音どうしの中央値を基準にする。
-  // 1.35倍 + 最小余裕だけ。以前よりかなり厳しい。
-  const base=median(pair);
-  const limit=Number.isFinite(base) ? base*1.35+0.006 : Infinity;
+  within.sort((a,b)=>a-b);
+  const median=within.length
+    ? within[Math.floor(within.length/2)]
+    : Infinity;
+  const max=within.length ? within[within.length-1] : Infinity;
 
-  classLimitCache[key]={base,limit,pair};
-  return classLimitCache[key];
+  // Nearest other-class reference. This is used only to keep acceptance
+  // well inside the class boundary.
+  let nearestOther=Infinity;
+  for(const [other,orefs] of Object.entries(templates)){
+    if(other===key)continue;
+    for(const a of refs){
+      for(const b of orefs||[]){
+        const d=dtw(a,b);
+        if(d<nearestOther)nearestOther=d;
+      }
+    }
+  }
+
+  let limit=Infinity;
+  if(Number.isFinite(median)){
+    limit=Math.max(median*2.0,max*1.45);
+  }
+  if(Number.isFinite(nearestOther)){
+    limit=Math.min(limit,nearestOther*.78);
+  }
+
+  return {median,max,nearestOther,limit};
 }
 
-function judgeTarget(feat,target){
-  const scores=classScores(feat);
-  if(!scores.length)return {correct:false,best:null,rank:-1,target:null};
 
-  const rank=scores.findIndex(x=>x.key===target);
-  const targetObj=rank>=0?scores[rank]:null;
+async function loadTemplates(){
+  const res=await fetch("./voice_templates.json?v="+Date.now(),{cache:"no-store"});
+  if(!res.ok)throw new Error("voice_templates.json を読み込めません");
+
+  const data=await res.json();
+
+  if(data.version!==FEATURE_VERSION){
+    throw new Error("正解音声データが旧方式です。v6で登録し直してください");
+  }
+
+  templates=data.templates||{};
+  calibration=data.calibration||{};
+}
+
+async function ensureMic(){
+  if(stream&&stream.active)return;
+
+  stream=await navigator.mediaDevices.getUserMedia({
+    audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1},
+    video:false
+  });
+
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==="suspended")await audioCtx.resume();
+}
+
+async function capture(ms=2400){
+  await ensureMic();
+  if(audioCtx.state==="suspended")await audioCtx.resume();
+
+  const src=audioCtx.createMediaStreamSource(stream);
+  const proc=audioCtx.createScriptProcessor(2048,1,1);
+  const sink=audioCtx.createGain();
+  sink.gain.value=.000001;
+  const parts=[];
+
+  proc.onaudioprocess=e=>parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+
+  src.connect(proc);proc.connect(sink);sink.connect(audioCtx.destination);
+  await sleep(ms);
+  try{src.disconnect(proc)}catch{}
+  try{proc.disconnect()}catch{}
+  try{sink.disconnect()}catch{}
+
+  const total=parts.reduce((n,a)=>n+a.length,0);
+  const raw=new Float32Array(total);
+  let p=0;
+  for(const a of parts){raw.set(a,p);p+=a.length}
+
+  if(!raw.length)throw new Error("録音できませんでした");
+  return resample(raw,audioCtx.sampleRate,TARGET_SR);
+}
+
+function newQuestion(){
+  let n;
+  do{n=Math.floor(Math.random()*ITEMS.length)}
+  while(n===currentIndex&&ITEMS.length>1);
+
+  currentIndex=n;
+  problem.textContent=ITEMS[n][0];
+  result.textContent="";
+  statusEl.textContent="";
+}
+
+function judge(feat,target){
+  const scores=classScores(feat,templates);
+  if(!scores.length)return {correct:false,best:null,scores};
+
   const best=scores[0];
   const second=scores[1]||null;
+  const targetObj=scores.find(x=>x.key===target)||null;
+  if(!targetObj)return {correct:false,best,second,scores};
 
-  if(!targetObj)return {correct:false,best,rank:-1,target:null};
+  // The spoken word must actually identify as the target.
+  if(best.key!==target){
+    return {correct:false,best,second,targetObj,scores};
+  }
 
-  const cal=classLimit(target);
+  const cal=calibration[target]||classCalibration(target,templates);
 
-  // 条件1: 必ず1位。以前の「2位でもほぼ同じなら○」は廃止。
-  const rankPass=(rank===0);
+  // Reject something far outside the teacher's recordings.
+  const absPass=!Number.isFinite(cal.limit)||targetObj.score<=cal.limit;
 
-  // 条件2: 正解録音そのものから離れすぎていたら×。
-  // 「どれかの語には一番近い」だけでは○にしない。
-  const absolutePass=targetObj.score<=cal.limit;
-
-  // 条件3: 2位との差が小さすぎる曖昧な音も×。
-  // ただし登録音に非常に近い場合だけ少し救済。
-  const separation=second ? targetObj.score/(second.score||1e-9) : 0;
-  const veryCloseToReference=targetObj.score<=cal.limit*0.72;
-  const separationPass=!second || separation<=0.965 || veryCloseToReference;
-
-  const correct=rankPass && absolutePass && separationPass;
+  // Also reject an ambiguous top-1 unless it is very close to the target model.
+  let marginPass=true;
+  let ratio=0;
+  if(second){
+    ratio=targetObj.score/(second.score||1e-9);
+    const veryClose=Number.isFinite(cal.median)&&targetObj.score<=cal.median*1.28;
+    marginPass=ratio<=.94||veryClose;
+  }
 
   return {
-    correct,best,second,rank,target:targetObj,
-    ratio:best ? targetObj.score/(best.score||1e-9) : Infinity,
-    separation,
-    limit:cal.limit,
-    base:cal.base,
-    rankPass,absolutePass,separationPass,
-    scores
+    correct:absPass&&marginPass,
+    best,second,targetObj,scores,ratio,cal,absPass,marginPass
   };
 }
 
@@ -598,55 +537,43 @@ async function attempt(){
   result.textContent="";
   statusEl.textContent="";
 
-  // Give the learner time to see the problem.
-  await sleep(500);
+  await sleep(600);
 
   recordBox.classList.add("recording");
   recordMain.textContent="録音中";
   recordSub.textContent="いま言ってください";
 
-  // Same duration family as teacher reference capture (1.9 sec).
-  const raw=await capturePcm(1900);
+  const pcm=await capture(2400);
 
   recordBox.classList.remove("recording");
   recordMain.textContent="";
   recordSub.textContent="";
 
-  const pcm16=resample(raw.pcm,raw.sampleRate,16000);
-  const feat=fingerprint(pcm16);
-  const judged=judgeTarget(feat,target);
+  const feat=mfccSequence(pcm);
+  const j=judge(feat,target);
 
-  if(!judged.best){
-    throw new Error("正解データがありません");
+  if(!j.best)throw new Error("正解音声データがありません");
+
+  if(DEBUG){
+    debugEl.textContent=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
   }
 
-  // Keep technical data small, but useful if we need one more diagnostic.
-  tech.textContent=
-    `使用中: ${track?.label||"マイク"} / `+
-    `peak=${raw.peak.toFixed(4)} / `+
-    `目標=${target} / 最接近=${judged.best.key} / `+
-    `目標順位=${judged.rank+1} / `+
-    `距離=${judged.target?.score?.toFixed?.(4) ?? "-"} / `+
-    `上限=${Number.isFinite(judged.limit)?judged.limit.toFixed(4):"-"} / `+
-    `2位比=${Number.isFinite(judged.separation)?judged.separation.toFixed(3):"-"}`;
-
-  if(judged.correct){
+  if(j.correct){
     result.textContent="○";
     result.className="result ok";
-    await sleep(550);
+    await sleep(600);
     newQuestion();
   }else{
     result.textContent="×";
     result.className="result ng";
-    statusEl.textContent=`いちばん近い音：${judged.best.key}`;
-    await sleep(800);
+    statusEl.textContent=`いちばん近い音：${j.best.key}`;
+    await sleep(850);
   }
 }
 
 async function practiceLoop(){
   if(running)return;
   running=true;
-
   try{
     while(started){
       try{
@@ -654,19 +581,9 @@ async function practiceLoop(){
       }catch(e){
         console.error(e);
         recordBox.classList.remove("recording");
-        recordMain.textContent="マイク確認";
+        recordMain.textContent="もう一度";
         recordSub.textContent="";
         statusEl.textContent=e.message||String(e);
-
-        if(e.code==="ZERO_INPUT"||e.code==="NO_FRAMES"){
-          micPanel.classList.add("show");
-          tech.textContent=
-            `使用中: ${track?.label||"不明"} / state=${track?.readyState||"不明"} / `+
-            `muted=${track?.muted}`;
-          started=false;
-          break;
-        }
-
         await sleep(900);
       }
     }
@@ -675,47 +592,18 @@ async function practiceLoop(){
   }
 }
 
-changeMic.onclick=async()=>{
-  try{
-    changeMic.disabled=true;
-    statusEl.textContent="マイクを変更しています…";
-
-    await openMic(micSelect.value);
-
-    statusEl.textContent="マイクを変更しました";
-    recordMain.textContent="開始を押してください";
-    recordSub.textContent="メーターが動くか確認してください";
-    startBtn.classList.remove("hidden");
-    startBtn.disabled=false;
-  }catch(e){
-    statusEl.textContent=e.message||String(e);
-  }finally{
-    changeMic.disabled=false;
-  }
-};
-
 startBtn.onclick=async()=>{
   try{
     startBtn.disabled=true;
     startBtn.textContent="マイク準備中…";
-
-    if(!stream||!stream.active){
-      await initialPermissionAndBestMic();
-    }
-
-    await refreshDevices();
-    micPanel.classList.add("show");
+    await ensureMic();
 
     started=true;
     startBtn.classList.add("hidden");
-    startBtn.textContent="開始";
-
     newQuestion();
-    await sleep(500);
+    await sleep(400);
     practiceLoop();
-
   }catch(e){
-    console.error(e);
     startBtn.disabled=false;
     startBtn.textContent="開始";
     statusEl.textContent=e.message||String(e);
@@ -724,19 +612,16 @@ startBtn.onclick=async()=>{
 
 (async()=>{
   try{
-    problem.textContent="正解データ読込中…";
     await loadTemplates();
-
     problem.textContent="準備OK";
     recordMain.textContent="開始を押してください";
     recordSub.textContent="最初だけマイクを許可します";
     startBtn.classList.remove("hidden");
   }catch(e){
     problem.textContent="データエラー";
-    statusEl.textContent=
-      "voice_templates.json を index.html と同じ場所に置いてください";
+    recordMain.textContent="";
+    statusEl.textContent=e.message||String(e);
   }
 })();
 </script>
-</body>
-</html>
+</body></html>
