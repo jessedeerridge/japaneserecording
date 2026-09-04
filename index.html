@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.7・活用部分チェック</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v6.8・厳格判定</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -733,7 +733,7 @@ function interpFrame(seq,pos){
 function endingShapeDistance(A,B){
   if(!A?.length||!B?.length)return Infinity;
 
-  const startFrac=.38;
+  const startFrac=.50;
   const N=28;
   let sum=0,wsum=0;
 
@@ -741,7 +741,7 @@ function endingShapeDistance(A,B){
     const f=startFrac+(1-startFrac)*(i/(N-1));
     const a=interpFrame(A,f*(A.length-1));
     const b=interpFrame(B,f*(B.length-1));
-    const w=.8+1.0*(i/(N-1));
+    const w=.7+1.8*(i/(N-1));
     sum+=frameDistance(a,b)*w;
     wsum+=w;
   }
@@ -769,7 +769,7 @@ function endingCalibration(key){
   const mx=pair.length ? pair[pair.length-1] : Infinity;
 
   const limit=Number.isFinite(mx)
-    ? Math.max(mx*2.15,med*2.45)
+    ? Math.max(mx*1.32,med*1.50)
     : Infinity;
 
   const out={median:med,max:mx,limit};
@@ -795,6 +795,87 @@ function endingClassScore(feat,key){
   return s/take;
 }
 
+
+function staticFrameDistance(a,b){
+  const D=Math.min(12,a.length,b.length);
+  let s=0;
+  for(let d=0;d<D;d++){
+    const q=a[d]-b[d];
+    s+=q*q;
+  }
+  return Math.sqrt(s/Math.max(1,D));
+}
+
+function coreEndingDistance(A,B){
+  if(!A?.length||!B?.length)return Infinity;
+
+  // 最後45%だけを見る。活用語尾の母音・子音差を優先。
+  const startFrac=.55;
+  const N=24;
+  let sum=0,wsum=0;
+
+  for(let i=0;i<N;i++){
+    const f=startFrac+(1-startFrac)*(i/(N-1));
+    const a=interpFrame(A,f*(A.length-1));
+    const b=interpFrame(B,f*(B.length-1));
+
+    // 中盤～後半を強める。
+    const x=i/(N-1);
+    const w=1.0+1.6*Math.sin(Math.PI*x);
+    sum+=staticFrameDistance(a,b)*w;
+    wsum+=w;
+  }
+
+  return sum/Math.max(1e-9,wsum);
+}
+
+const coreEndingCalCache={};
+
+function coreEndingCalibration(key){
+  if(coreEndingCalCache[key])return coreEndingCalCache[key];
+
+  const refs=templates[key]||[];
+  const pair=[];
+
+  for(let i=0;i<refs.length;i++){
+    for(let j=i+1;j<refs.length;j++){
+      const d=coreEndingDistance(refs[i],refs[j]);
+      if(Number.isFinite(d))pair.push(d);
+    }
+  }
+
+  pair.sort((a,b)=>a-b);
+  const med=pair.length ? pair[Math.floor(pair.length/2)] : Infinity;
+  const mx=pair.length ? pair[pair.length-1] : Infinity;
+
+  // かなり厳しめ。正解登録3回の自然な差から少しだけ広げる。
+  const limit=Number.isFinite(mx)
+    ? Math.max(mx*1.25,med*1.40)
+    : Infinity;
+
+  const out={median:med,max:mx,limit};
+  coreEndingCalCache[key]=out;
+  return out;
+}
+
+function coreEndingClassScore(feat,key){
+  const refs=templates[key]||[];
+  const ds=[];
+
+  for(const ref of refs){
+    const d=coreEndingDistance(feat,ref);
+    if(Number.isFinite(d))ds.push(d);
+  }
+
+  if(!ds.length)return Infinity;
+  ds.sort((a,b)=>a-b);
+
+  const take=Math.min(2,ds.length);
+  let s=0;
+  for(let i=0;i<take;i++)s+=ds[i];
+  return s/take;
+}
+
 function judge(feat,target){
   const scores=classScores(feat,templates);
   if(!scores.length)return {correct:false,best:null,scores};
@@ -803,6 +884,7 @@ function judge(feat,target){
   const second=scores[1]||null;
   const targetObj=scores.find(x=>x.key===target)||null;
 
+  // 1. 語全体で正解語が必ず1位。
   if(best.key!==target){
     return {
       correct:false,best,second,targetObj,scores,
@@ -810,24 +892,55 @@ function judge(feat,target){
     };
   }
 
-  const endingScore=endingClassScore(feat,target);
-  const ecal=endingCalibration(target);
-  const endingPass=
-    !Number.isFinite(ecal.limit) ||
-    endingScore<=ecal.limit;
+  // 2. 語全体も正解録音から離れすぎていないこと。
+  const wholeCal=calibration[target]||classCalibration(target,templates);
+  let wholeLimit=Infinity;
 
+  if(Number.isFinite(wholeCal.max) || Number.isFinite(wholeCal.median)){
+    const a=Number.isFinite(wholeCal.max) ? wholeCal.max*1.60 : Infinity;
+    const b=Number.isFinite(wholeCal.median) ? wholeCal.median*1.90 : Infinity;
+    wholeLimit=Math.min(a,b);
+  }
+
+  if(Number.isFinite(wholeCal.nearestOther)){
+    wholeLimit=Math.min(wholeLimit,wholeCal.nearestOther*.84);
+  }
+
+  const wholePass=
+    !Number.isFinite(wholeLimit) ||
+    best.score<=wholeLimit;
+
+  // 3. 後半50%の形が正解録音に合うこと。
+  const endingScore=endingClassScore(feat,target);
+  const endingCal=endingCalibration(target);
+  const endingPass=
+    !Number.isFinite(endingCal.limit) ||
+    endingScore<=endingCal.limit;
+
+  // 4. 最後45%を静的MFCCだけでも確認。
+  const coreScore=coreEndingClassScore(feat,target);
+  const coreCal=coreEndingCalibration(target);
+  const corePass=
+    !Number.isFinite(coreCal.limit) ||
+    coreScore<=coreCal.limit;
+
+  // 5. 1位と2位が近すぎる場合は×。
   const ratio=second ? best.score/(second.score||1e-9) : 0;
-  const marginPass=!second || ratio<=.995;
+  const marginPass=!second || ratio<=.975;
+
+  let reason="ok";
+  if(!wholePass) reason="whole";
+  else if(!endingPass || !corePass) reason="ending";
+  else if(!marginPass) reason="ambiguous";
 
   return {
-    correct:endingPass&&marginPass,
+    correct:wholePass&&endingPass&&corePass&&marginPass,
     best,second,targetObj,scores,
-    endingScore,
-    endingLimit:ecal.limit,
-    ratio,
-    endingPass,
-    marginPass,
-    reason:endingPass ? (marginPass ? "ok" : "ambiguous") : "ending"
+    wholePass,wholeLimit,
+    endingScore,endingLimit:endingCal.limit,endingPass,
+    coreScore,coreLimit:coreCal.limit,corePass,
+    ratio,marginPass,
+    reason
   };
 }
 
@@ -856,10 +969,16 @@ async function attempt(){
 
   if(DEBUG){
     const base=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
-    const endInfo=Number.isFinite(j.endingScore)
-      ? ` / 語尾=${j.endingScore.toFixed(3)} 上限=${Number.isFinite(j.endingLimit)?j.endingLimit.toFixed(3):"-"}`
+    const wholeInfo=Number.isFinite(j.wholeLimit)
+      ? ` / 全体=${j.best.score.toFixed(3)}/${j.wholeLimit.toFixed(3)}`
       : "";
-    debugEl.textContent=base+endInfo;
+    const endInfo=Number.isFinite(j.endingScore)
+      ? ` / 後半=${j.endingScore.toFixed(3)}/${Number.isFinite(j.endingLimit)?j.endingLimit.toFixed(3):"-"}`
+      : "";
+    const coreInfo=Number.isFinite(j.coreScore)
+      ? ` / 語尾核=${j.coreScore.toFixed(3)}/${Number.isFinite(j.coreLimit)?j.coreLimit.toFixed(3):"-"}`
+      : "";
+    debugEl.textContent=base+wholeInfo+endInfo+coreInfo;
   }
 
   if(j.correct){
