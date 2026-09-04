@@ -14,13 +14,11 @@ h1{font-size:24px;margin:0 0 6px}.sub{font-size:13px;color:#666;margin-bottom:16
 button{border:0;border-radius:12px;padding:12px 16px;font-size:16px;font-weight:700;cursor:pointer}
 button:disabled{opacity:.45}.primary{background:#111;color:#fff}.light{background:#e9e9e9}.warn{background:#ffe4e4;color:#8a1515}
 .rec{
- min-height:155px;border:3px solid #222;border-radius:17px;margin:12px 0 16px;
+ min-height:170px;border:3px solid #222;border-radius:17px;margin:12px 0 16px;
  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:15px
 }
 .rec.on{background:#111;color:#fff}
 .big{font-size:30px;font-weight:900}.mid{font-size:17px;margin-top:5px}.heard{font-size:17px;margin-top:9px}
-.ok{color:#087f23}.bad{color:#c62828}
-.rec.on .ok,.rec.on .bad{color:#fff}
 .row{display:grid;grid-template-columns:1fr 60px auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #eee}
 .word{font-size:18px}.count{text-align:center;color:#666}
 .note{margin-top:14px;background:#f7f7f7;padding:11px;border-radius:11px;font-size:13px;color:#555;line-height:1.5}
@@ -30,7 +28,7 @@ button:disabled{opacity:.45}.primary{background:#111;color:#fff}.light{backgroun
 <body>
 <div class="wrap"><div class="card">
 <h1>て形・正解音声登録</h1>
-<div class="sub">先生用。Chrome推奨。各語を3回、正しく認識された音声だけ登録します。</div>
+<div class="sub">先生用。Chrome推奨。正しく認識された語だけ3回登録します。</div>
 
 <div class="top">
 <button id="start" class="primary">自動で3回ずつ登録</button>
@@ -49,7 +47,13 @@ button:disabled{opacity:.45}.primary{background:#111;color:#fff}.light{backgroun
 <div class="range">
 <span>判定</span><input id="threshold" type="range" min="35" max="85" value="60"><b id="thv">60</b>
 </div>
-<div class="note">マイク許可は、このページをGitHub PagesなどのHTTPS上で開いたときにブラウザ側で保存されます。音声認識は録音ごとに新しく開始しますが、これはマイク許可とは別です。</div>
+
+<div class="note">
+1回の登録は「確認」と「録音」の2段階です。<br>
+① まずGoogle音声認識で「書いて」などを確認します。<br>
+② 正しく認識されたら、もう一度同じ語を言って登録します。<br>
+これで音声認識と録音がマイクを同時使用しないようにしています。
+</div>
 </div></div>
 
 <script>
@@ -60,204 +64,337 @@ const ITEMS=[
 ["行きます","行って","いって"],["買います","買って","かって"],["待ちます","待って","まって"],
 ["遊びます","遊んで","あそんで"],["泳ぎます","泳いで","およいで"],["します","して","して"],["来ます","来て","きて"]
 ];
+
 const $=s=>document.querySelector(s);
-const startBtn=$("#start"),exportBtn=$("#export"),clearBtn=$("#clear"),recBox=$("#rec"),
-title=$("#title"),counter=$("#counter"),heard=$("#heard"),list=$("#list"),
-threshold=$("#threshold"),thv=$("#thv");
+const startBtn=$("#start"),exportBtn=$("#export"),clearBtn=$("#clear"),
+recBox=$("#rec"),title=$("#title"),counter=$("#counter"),heard=$("#heard"),
+list=$("#list"),threshold=$("#threshold"),thv=$("#thv");
 
 let templates={};
-try{templates=JSON.parse(localStorage.getItem("teform_voice_templates_v2")||"{}")}catch{}
-let running=false,index=0;
+try{templates=JSON.parse(localStorage.getItem("teform_voice_templates_v3")||"{}")}catch{}
+let running=false;
 
 threshold.oninput=()=>thv.textContent=threshold.value;
 
-function save(){localStorage.setItem("teform_voice_templates_v2",JSON.stringify(templates))}
+function save(){
+ localStorage.setItem("teform_voice_templates_v3",JSON.stringify(templates));
+}
 function render(){
  list.innerHTML="";
  ITEMS.forEach((x,i)=>{
-  const d=document.createElement("div");d.className="row";
-  d.innerHTML=`<div class="word">${x[0]} → ${x[1]}</div><div class="count">${(templates[x[2]]||[]).length}/3</div><button class="light" data-i="${i}">録音</button>`;
+  const d=document.createElement("div");
+  d.className="row";
+  d.innerHTML=
+   `<div class="word">${x[0]} → ${x[1]}</div>
+    <div class="count">${(templates[x[2]]||[]).length}/3</div>
+    <button class="light" data-i="${i}">録音</button>`;
   list.appendChild(d);
  });
- list.querySelectorAll("button").forEach(b=>b.onclick=()=>single(Number(b.dataset.i)));
+ list.querySelectorAll("button").forEach(b=>{
+   b.onclick=()=>single(Number(b.dataset.i));
+ });
 }
 function norm(s){
- return (s||"").trim().replace(/[、。！？!?,.\s「」『』]/g,"")
- .replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
+ return (s||"")
+   .trim()
+   .replace(/[、。！？!?,.\s「」『』]/g,"")
+   .replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
 }
-function accepted(text,item){
- const n=norm(text), kana=norm(item[2]), kanji=norm(item[1]);
- return n===kana||n===kanji||n.endsWith(kana)||n.endsWith(kanji);
+function matchesAny(texts,item){
+ const expected=[norm(item[1]),norm(item[2])];
+ return texts.some(t=>{
+   const n=norm(t);
+   return expected.some(e=>n===e || n.endsWith(e));
+ });
 }
 
-/* Google/Chrome speech recognition.
-   IMPORTANT: each recognition creates a fresh instance.
-   This avoids the broken persistent-recognizer state from earlier versions. */
-function recognizeOnce(){
+/* ---------- Google/Chrome recognition ONLY ---------- */
+function recognize(item){
  return new Promise(resolve=>{
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){resolve({ok:false,text:"",error:"このブラウザは音声認識に対応していません"});return}
-  const r=new SR();
-  r.lang="ja-JP";
-  r.interimResults=false;
-  r.continuous=false;
-  r.maxAlternatives=5;
-  let done=false,best="";
-  const finish=(obj)=>{if(done)return;done=true;resolve(obj)};
-  r.onresult=e=>{
-   if(e.results?.[0]){
-    const alts=[...e.results[0]];
-    best=alts.map(a=>a.transcript).filter(Boolean)[0]||"";
-    finish({ok:true,text:best,alts:alts.map(a=>a.transcript)});
+   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+   if(!SR){
+     resolve({ok:false,error:"このブラウザは音声認識に対応していません",texts:[]});
+     return;
    }
-  };
-  r.onerror=e=>finish({ok:false,text:"",error:e.error});
-  r.onend=()=>finish(best?{ok:true,text:best}:{ok:false,text:"",error:"no-result"});
-  try{r.start()}catch(e){finish({ok:false,text:"",error:e.message})}
+
+   const r=new SR();
+   r.lang="ja-JP";
+   r.interimResults=false;
+   r.continuous=false;
+   r.maxAlternatives=5;
+
+   let settled=false;
+   const done=x=>{
+     if(settled)return;
+     settled=true;
+     clearTimeout(timer);
+     resolve(x);
+   };
+
+   r.onresult=e=>{
+     const texts=[];
+     if(e.results && e.results[0]){
+       for(let i=0;i<e.results[0].length;i++){
+         const t=e.results[0][i]?.transcript;
+         if(t)texts.push(t);
+       }
+     }
+     done({ok:matchesAny(texts,item),texts,error:""});
+   };
+
+   r.onerror=e=>{
+     done({ok:false,texts:[],error:e.error||"recognition-error"});
+   };
+
+   r.onend=()=>{
+     if(!settled)done({ok:false,texts:[],error:"no-result"});
+   };
+
+   const timer=setTimeout(()=>{
+     try{r.abort()}catch{}
+     done({ok:false,texts:[],error:"timeout"});
+   },6000);
+
+   try{
+     r.start();
+   }catch(e){
+     done({ok:false,texts:[],error:e.message||String(e)});
+   }
  });
 }
 
-async function getAudio(){
+/* ---------- Recording ONLY ---------- */
+async function recordPcm(ms=1700){
  const stream=await navigator.mediaDevices.getUserMedia({
-  audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}
+   audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}
  });
- const ctx=new AudioContext();
+ const ctx=new (window.AudioContext||window.webkitAudioContext)();
  const src=ctx.createMediaStreamSource(stream);
  const proc=ctx.createScriptProcessor(4096,1,1);
- const chunks=[];
- proc.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
- src.connect(proc);proc.connect(ctx.destination);
- return {stream,ctx,src,proc,chunks};
+ const parts=[];
+
+ proc.onaudioprocess=e=>{
+   parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+ };
+
+ src.connect(proc);
+ proc.connect(ctx.destination);
+
+ await new Promise(r=>setTimeout(r,ms));
+
+ proc.disconnect();
+ src.disconnect();
+ stream.getTracks().forEach(t=>t.stop());
+
+ const total=parts.reduce((n,a)=>n+a.length,0);
+ const raw=new Float32Array(total);
+ let pos=0;
+ for(const a of parts){raw.set(a,pos);pos+=a.length}
+
+ const rate=ctx.sampleRate;
+ await ctx.close();
+ return resample(raw,rate,16000);
 }
-function finishAudio(a){
- a.proc.disconnect();a.src.disconnect();a.stream.getTracks().forEach(t=>t.stop());
- const total=a.chunks.reduce((n,x)=>n+x.length,0),out=new Float32Array(total);
- let p=0;for(const x of a.chunks){out.set(x,p);p+=x.length}
- const rate=a.ctx.sampleRate;a.ctx.close();
- return resample(out,rate,16000);
-}
+
 function resample(x,from,to){
  if(from===to)return x;
- const len=Math.max(1,Math.round(x.length*to/from)),o=new Float32Array(len);
- for(let i=0;i<len;i++){const p=i*from/to,a=Math.floor(p),b=Math.min(x.length-1,a+1),t=p-a;o[i]=x[a]*(1-t)+x[b]*t}
+ const len=Math.max(1,Math.round(x.length*to/from));
+ const o=new Float32Array(len);
+ for(let i=0;i<len;i++){
+   const p=i*from/to,a=Math.floor(p),b=Math.min(x.length-1,a+1),t=p-a;
+   o[i]=x[a]*(1-t)+x[b]*t;
+ }
  return o;
 }
+
 function trim(x){
- let mx=0;for(const v of x)mx=Math.max(mx,Math.abs(v));
+ let mx=0;
+ for(const v of x)mx=Math.max(mx,Math.abs(v));
  if(mx<.006)return x;
+
  const th=Math.max(.01,mx*.07),w=320;
- const rms=p=>{let s=0,n=0;for(let i=p;i<Math.min(x.length,p+w);i++){s+=x[i]*x[i];n++}return Math.sqrt(s/Math.max(1,n))}
+ const rms=p=>{
+   let s=0,n=0;
+   for(let i=p;i<Math.min(x.length,p+w);i++){s+=x[i]*x[i];n++}
+   return Math.sqrt(s/Math.max(1,n));
+ };
+
  let a=0,b=x.length;
- for(let p=0;p<x.length-w;p+=160)if(rms(p)>th){a=Math.max(0,p-640);break}
- for(let p=x.length-w;p>0;p-=160)if(rms(p)>th){b=Math.min(x.length,p+w+640);break}
+ for(let p=0;p<x.length-w;p+=160){
+   if(rms(p)>th){a=Math.max(0,p-640);break}
+ }
+ for(let p=x.length-w;p>0;p-=160){
+   if(rms(p)>th){b=Math.min(x.length,p+w+640);break}
+ }
  return x.slice(a,b);
 }
+
 function fingerprint(x){
- x=trim(x);if(x.length<1500)throw Error("声が短すぎます");
+ x=trim(x);
+ if(x.length<1500)throw Error("声が短すぎます");
+
  const F=28,B=18,N=256,out=[];
+
  for(let f=0;f<F;f++){
-  const st=Math.max(0,Math.min(x.length-N-1,Math.floor((f+.5)/F*x.length-N/2))),row=[];
-  for(let b=0;b<B;b++){
-   const fr=180*Math.pow(4200/180,b/(B-1)),w=2*Math.PI*fr/16000;let re=0,im=0;
-   for(let n=0;n<N;n++){const win=.5-.5*Math.cos(2*Math.PI*n/(N-1)),v=(x[st+n]||0)*win;re+=v*Math.cos(w*n);im-=v*Math.sin(w*n)}
-   row.push(Math.log(1e-7+re*re+im*im));
-  }
-  const m=row.reduce((a,b)=>a+b,0)/B;let ss=0;
-  for(let b=0;b<B;b++){row[b]-=m;ss+=row[b]*row[b]}
-  const sd=Math.sqrt(ss/B)||1;for(let b=0;b<B;b++)row[b]/=sd;
-  out.push(row);
+   const st=Math.max(0,Math.min(
+     x.length-N-1,
+     Math.floor((f+.5)/F*x.length-N/2)
+   ));
+
+   const row=[];
+
+   for(let b=0;b<B;b++){
+     const fr=180*Math.pow(4200/180,b/(B-1));
+     const w=2*Math.PI*fr/16000;
+     let re=0,im=0;
+
+     for(let n=0;n<N;n++){
+       const win=.5-.5*Math.cos(2*Math.PI*n/(N-1));
+       const v=(x[st+n]||0)*win;
+       re+=v*Math.cos(w*n);
+       im-=v*Math.sin(w*n);
+     }
+
+     row.push(Math.log(1e-7+re*re+im*im));
+   }
+
+   const m=row.reduce((a,b)=>a+b,0)/B;
+   let ss=0;
+   for(let b=0;b<B;b++){
+     row[b]-=m;
+     ss+=row[b]*row[b];
+   }
+
+   const sd=Math.sqrt(ss/B)||1;
+   for(let b=0;b<B;b++)row[b]/=sd;
+
+   out.push(row);
  }
+
  return out;
 }
 
-async function capture(i){
- const item=ITEMS[i],key=item[2],count=(templates[key]||[]).length;
- title.textContent=item[1];counter.textContent=`録音中　${Math.min(count+1,3)}/3`;heard.textContent="認識結果：聞いています…";
+async function doOne(i){
+ const item=ITEMS[i];
+ const key=item[2];
+ const existing=(templates[key]||[]).length;
+
+ title.textContent=item[1];
+ counter.textContent=`確認　${existing+1}/3`;
+ heard.textContent="認識結果：聞いています…";
  recBox.classList.add("on");
 
- let audio;
- try{
-  /* Start recognizer first, then audio capture, then wait before prompting. */
-  const recognitionPromise=recognizeOnce();
-  audio=await getAudio();
-  await new Promise(r=>setTimeout(r,450));
-  // visual cue after recognition is definitely listening
-  title.textContent=item[1]+"　●";
-  await new Promise(r=>setTimeout(r,1800));
-  const pcm=finishAudio(audio);
-  const recog=await Promise.race([
-   recognitionPromise,
-   new Promise(r=>setTimeout(()=>r({ok:false,text:"",error:"timeout"}),2500))
-  ]);
-  recBox.classList.remove("on");
+ const result=await recognize(item);
 
-  if(!recog.ok){
-   title.textContent="認識できませんでした";
-   counter.textContent="この回は登録しません";
-   heard.textContent="認識結果："+(recog.error||"なし");
+ recBox.classList.remove("on");
+
+ if(!result.ok){
+   const shown=result.texts?.length
+     ? result.texts.join(" / ")
+     : result.error || "認識できませんでした";
+
+   title.textContent="登録しません";
+   counter.textContent="もう一度確認します";
+   heard.textContent="認識結果："+shown;
    return false;
-  }
-
-  // Accept any of Google's alternatives, not just first result.
-  const texts=recog.alts?.length?recog.alts:[recog.text];
-  const matched=texts.find(t=>accepted(t,item));
-  heard.textContent="認識結果："+recog.text;
-
-  if(!matched){
-   title.textContent="違う言葉として認識";
-   counter.textContent=`正解：${item[1]}　この回は登録しません`;
-   return false;
-  }
-
-  const feat=fingerprint(pcm);
-  templates[key]=templates[key]||[];
-  if(templates[key].length<3)templates[key].push(feat);
-  save();render();
-  title.textContent=`${item[1]}　成功`;
-  counter.textContent=`${templates[key].length}/3`;
-  return true;
- }catch(e){
-  if(audio){try{finishAudio(audio)}catch{}}
-  recBox.classList.remove("on");title.textContent="エラー";counter.textContent=e.message||String(e);
-  return false;
  }
+
+ heard.textContent="認識結果："+result.texts.join(" / ");
+ title.textContent=item[1];
+ counter.textContent="正しく認識されました。もう一度言ってください";
+ recBox.classList.add("on");
+
+ await new Promise(r=>setTimeout(r,450));
+
+ const pcm=await recordPcm(1800);
+ const feat=fingerprint(pcm);
+
+ templates[key]=templates[key]||[];
+ if(templates[key].length<3){
+   templates[key].push(feat);
+   save();
+ }
+
+ recBox.classList.remove("on");
+ render();
+
+ title.textContent=`${item[1]}　登録成功`;
+ counter.textContent=`${templates[key].length}/3`;
+
+ return true;
 }
 
 async function single(i){
- if(running)return;running=true;
- await capture(i);running=false;
+ if(running)return;
+ running=true;
+ try{
+   await doOne(i);
+ }catch(e){
+   recBox.classList.remove("on");
+   title.textContent="エラー";
+   counter.textContent=e.message||String(e);
+ }
+ running=false;
 }
 
 startBtn.onclick=async()=>{
  if(running)return;
- running=true;startBtn.disabled=true;startBtn.textContent="自動登録中…";
- try{
-  // Ask mic permission once before loop; close this warmup stream immediately.
-  const warm=await navigator.mediaDevices.getUserMedia({audio:true});
-  warm.getTracks().forEach(t=>t.stop());
 
-  for(index=0;index<ITEMS.length;index++){
-   const key=ITEMS[index][2];
-   while((templates[key]||[]).length<3){
-    await capture(index);
-    await new Promise(r=>setTimeout(r,650));
+ running=true;
+ startBtn.disabled=true;
+ startBtn.textContent="自動登録中…";
+
+ try{
+   for(let i=0;i<ITEMS.length;i++){
+     const key=ITEMS[i][2];
+
+     while((templates[key]||[]).length<3){
+       await doOne(i);
+       await new Promise(r=>setTimeout(r,700));
+     }
+
+     await new Promise(r=>setTimeout(r,500));
    }
-   await new Promise(r=>setTimeout(r,500));
-  }
-  title.textContent="すべて登録完了";counter.textContent="";heard.textContent="認識結果：―";
+
+   title.textContent="すべて登録完了";
+   counter.textContent="";
+   heard.textContent="認識結果：―";
  }catch(e){
-  title.textContent="マイクを許可できません";counter.textContent=e.message||String(e);
+   recBox.classList.remove("on");
+   title.textContent="エラー";
+   counter.textContent=e.message||String(e);
+ }finally{
+   running=false;
+   startBtn.disabled=false;
+   startBtn.textContent="自動で3回ずつ登録";
  }
- running=false;startBtn.disabled=false;startBtn.textContent="自動で3回ずつ登録";
 };
 
 exportBtn.onclick=()=>{
- const data={version:2,threshold:Number(threshold.value),createdAt:new Date().toISOString(),templates};
+ const data={
+   version:3,
+   threshold:Number(threshold.value),
+   createdAt:new Date().toISOString(),
+   templates
+ };
+
  const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
- const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="voice_templates.json";a.click();
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="voice_templates.json";
+ a.click();
  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
-clearBtn.onclick=()=>{if(confirm("登録を全部消しますか？")){templates={};save();render()}};
+
+clearBtn.onclick=()=>{
+ if(confirm("登録を全部消しますか？")){
+   templates={};
+   save();
+   render();
+ }
+};
+
 render();
 </script>
-</body></html>
+</body>
+</html>
