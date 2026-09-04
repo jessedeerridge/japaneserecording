@@ -216,6 +216,7 @@ async function recordPcm(ms=1900){
   proc.connect(gain);
   gain.connect(audioCtx.destination);
 
+  await new Promise(r=>setTimeout(r,120));
   await new Promise(r=>setTimeout(r,ms));
 
   proc.disconnect();
@@ -237,11 +238,11 @@ function trim(x){
   let mx=0;
   for(const v of x)mx=Math.max(mx,Math.abs(v));
 
-  if(mx<.012){
+  if(mx<.0015){
     throw new Error("声が入っていません");
   }
 
-  const th=Math.max(.014,mx*.09);
+  const th=Math.max(.0025,mx*.05);
   const w=320;
 
   const rms=p=>{
@@ -269,7 +270,7 @@ function trim(x){
     }
   }
 
-  if(a<0 || b<0 || b-a<1800){
+  if(a<0 || b<0 || b-a<900){
     throw new Error("声をもう少しはっきり言ってください");
   }
 
@@ -407,7 +408,7 @@ async function doAttempt(){
   statusEl.textContent="";
 
   // 以前より長めに録音
-  const pcm=await recordPcm(2400);
+  const pcm=await recordPcm(2600);
 
   recordBox.classList.remove("recording");
   recordMain.textContent="";
