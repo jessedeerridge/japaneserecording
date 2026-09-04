@@ -32,7 +32,7 @@ button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:
 <body>
 <div class="wrap"><div class="card">
 <h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。　学生版 v9.2・誤用との差＋違う部分を重点判定</div>
+<div class="sub">問題が出たら、て形を言ってください。　学生版 v9.3・最寄り候補判定</div>
 <div id="problem" class="problem">読み込み中…</div>
 <div id="recordBox" class="recordBox">
 <div id="recordMain" class="recordMain">準備中</div>
@@ -1492,54 +1492,42 @@ function contrastivePairScore(feat,target,wrong){
 
 function judge(feat,target,candidates){
   const scores=classScores(feat,templates,candidates);
-  if(!scores.length)return {correct:false,best:null,second:null,scores,reason:"nodata"};
+  if(!scores.length){
+    return {correct:false,best:null,nearestWrong:null,scores,reason:"nodata"};
+  }
 
   const best=scores[0];
   const wrongScores=scores.filter(x=>x.key!==target);
   const nearestWrong=wrongScores[0]||null;
 
-  // ① まず語全体では正解が1位であること。
+  // 正解候補が1位でなければ×
   if(best.key!==target){
     return {
       correct:false,
       best,
-      second:nearestWrong,
       nearestWrong,
       scores,
       reason:"word"
     };
   }
 
-  const globalRatio=nearestWrong && Number.isFinite(nearestWrong.score) && nearestWrong.score>0
+  // 似た活用形では 1～数％しか差が出ないことが普通。
+  // 10%差は要求しない。
+  // ただし完全な同点に近い場合だけ「もう一度」にする。
+  const ratio=nearestWrong && Number.isFinite(nearestWrong.score) && nearestWrong.score>0
     ? best.score/nearestWrong.score
     : 0;
 
-  // 語全体で10%以上勝っていればそのまま○。
-  const globalStrong=!nearestWrong || globalRatio<=0.90;
-
-  // 語全体では差が小さい場合、
-  // 「正解と誤用で実際に違う時間位置」を重点的に比較する。
-  let contrast=null;
-  let contrastStrong=false;
-
-  if(nearestWrong){
-    contrast=contrastivePairScore(feat,target,nearestWrong.key);
-    contrastStrong=Number.isFinite(contrast.ratio) && contrast.ratio<=0.97;
-  }
-
-  const correct=globalStrong || contrastStrong;
+  const ambiguous=nearestWrong && ratio>0.995; // 差が0.5%未満だけ再試行
 
   return {
-    correct,
+    correct:!ambiguous,
     best,
-    second:nearestWrong,
     nearestWrong,
     scores,
-    globalRatio,
-    globalStrong,
-    contrast,
-    contrastStrong,
-    reason:correct ? "ok" : "margin"
+    ratio,
+    ambiguous,
+    reason:ambiguous ? "ambiguous" : "ok"
   };
 }
 
@@ -1570,13 +1558,10 @@ async function attempt(){
 
   if(DEBUG){
     const word=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
-    const g=Number.isFinite(j.globalRatio)
-      ? ` / 全体比=${j.globalRatio.toFixed(3)}`
+    const ratio=Number.isFinite(j.ratio)
+      ? ` / 正解÷最寄り誤用=${j.ratio.toFixed(3)}`
       : "";
-    const c=j.contrast && Number.isFinite(j.contrast.ratio)
-      ? ` / 違う部分比=${j.contrast.ratio.toFixed(3)}（0.970以下で○）`
-      : "";
-    debugEl.textContent=word+g+c;
+    debugEl.textContent=word+ratio;
   }
 
   if(j.correct){
@@ -1585,18 +1570,15 @@ async function attempt(){
     await sleep(600);
     newQuestion();
   }else{
-    result.textContent="×";
-    result.className="result ng";
-    if(j.reason==="margin" && j.nearestWrong){
-      const g=Number.isFinite(j.globalRatio)
-        ? Math.round((1-j.globalRatio)*100)
-        : 0;
-      const c=j.contrast && Number.isFinite(j.contrast.ratio)
-        ? Math.round((1-j.contrast.ratio)*100)
-        : 0;
-
-      statusEl.textContent=
-        `正解に近いですが判定があいまいです（全体差 ${g}% / 違う部分差 ${c}%）`;
+    if(j.reason==="ambiguous"){
+      result.textContent="もう一度";
+      result.className="result";
+    }else{
+      result.textContent="×";
+      result.className="result ng";
+    }
+    if(j.reason==="ambiguous" && j.nearestWrong){
+      statusEl.textContent="判定がほぼ同点です。もう一度言ってください";
     }else if(j.best){
       statusEl.textContent=`この問題でいちばん近い音：${j.best.key}`;
     }else{
