@@ -3,57 +3,68 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>て形 正解音声登録</title>
+<title>て形 正解音声登録 PRO</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f3f4f6;color:#111;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
-.wrap{width:min(720px,94vw);margin:24px auto 60px}
+.wrap{width:min(760px,94vw);margin:24px auto 60px}
 .card{background:#fff;border:1px solid #ddd;border-radius:20px;padding:24px;box-shadow:0 5px 18px rgba(0,0,0,.06)}
-h1{font-size:24px;margin:0 0 6px}.sub{font-size:13px;color:#666;margin-bottom:16px}
+h1{font-size:24px;margin:0 0 6px}
+.sub{font-size:13px;color:#666;margin-bottom:16px;line-height:1.5}
 .top{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 button{border:0;border-radius:12px;padding:12px 16px;font-size:16px;font-weight:700;cursor:pointer}
-button:disabled{opacity:.45}.primary{background:#111;color:#fff}.light{background:#e9e9e9}.warn{background:#ffe4e4;color:#8a1515}
+button:disabled{opacity:.45}
+.primary{background:#111;color:#fff}.light{background:#e9e9e9}.warn{background:#ffe4e4;color:#8a1515}
 .rec{
- min-height:170px;border:3px solid #222;border-radius:17px;margin:12px 0 16px;
- display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:15px
+  min-height:175px;border:3px solid #222;border-radius:17px;margin:12px 0 16px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:15px;
+  transition:background .22s ease,color .22s ease,transform .22s ease
 }
 .rec.on{background:#111;color:#fff}
-.big{font-size:30px;font-weight:900}.mid{font-size:17px;margin-top:5px}.heard{font-size:17px;margin-top:9px}
-.row{display:grid;grid-template-columns:1fr 60px auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #eee}
+
+.big{font-size:32px;font-weight:900}
+.mid{font-size:18px;margin-top:6px}
+.heard{font-size:16px;margin-top:9px;min-height:24px}
+.row{display:grid;grid-template-columns:1fr 62px;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #eee}
 .word{font-size:18px}.count{text-align:center;color:#666}
-.note{margin-top:14px;background:#f7f7f7;padding:11px;border-radius:11px;font-size:13px;color:#555;line-height:1.5}
 .range{display:flex;gap:10px;align-items:center;margin-top:15px}.range input{flex:1}
+.note{margin-top:14px;background:#f7f7f7;padding:11px;border-radius:11px;font-size:13px;color:#555;line-height:1.55}
+.diag{margin-top:10px;font-size:12px;color:#777;word-break:break-word}
 </style>
 </head>
 <body>
 <div class="wrap"><div class="card">
-<h1>て形・正解音声登録</h1>
-<div class="sub">先生用。Chrome推奨。正しく認識された語だけ3回登録します。</div>
+<h1>て形・正解音声登録 PRO</h1>
+<div class="sub">
+最初の「開始」でマイクとGoogle音声認識を開始します。
+判定表示はすべてひらがなにそろえます。
+</div>
 
 <div class="top">
-<button id="start" class="primary">自動で3回ずつ登録</button>
-<button id="export" class="light">JSONを書き出す</button>
-<button id="clear" class="warn">全部消す</button>
+  <button id="start" class="primary">開始</button>
+  <button id="export" class="light">JSONを書き出す</button>
+  <button id="clear" class="warn">全部消す</button>
 </div>
 
 <div id="rec" class="rec">
- <div id="title" class="big">開始してください</div>
- <div id="counter" class="mid"></div>
- <div id="heard" class="heard">認識結果：―</div>
+  <div id="title" class="big">開始してください</div>
+  <div id="counter" class="mid"></div>
+  <div id="heard" class="heard">認識結果：―</div>
 </div>
 
 <div id="list"></div>
 
 <div class="range">
-<span>判定</span><input id="threshold" type="range" min="35" max="85" value="60"><b id="thv">60</b>
+  <span>判定</span>
+  <input id="threshold" type="range" min="35" max="85" value="60">
+  <b id="thv">60</b>
 </div>
 
 <div class="note">
-1回の登録は「確認」と「録音」の2段階です。<br>
-① まずGoogle音声認識で「書いて」などを確認します。<br>
-② 正しく認識されたら、もう一度同じ語を言って登録します。<br>
-これで音声認識と録音がマイクを同時使用しないようにしています。
+正しく認識された回だけ保存します。3回成功するとすぐ次の語へ進みます。
+マイク許可はブラウザ側で保存され、HTML側では許可済みかどうかを確認して再利用します。
 </div>
+<div id="diag" class="diag"></div>
 </div></div>
 
 <script>
@@ -62,337 +73,496 @@ const ITEMS=[
 ["飲みます","飲んで","のんで"],["話します","話して","はなして"],["食べます","食べて","たべて"],
 ["見ます","見て","みて"],["起きます","起きて","おきて"],["寝ます","寝て","ねて"],
 ["行きます","行って","いって"],["買います","買って","かって"],["待ちます","待って","まって"],
-["遊びます","遊んで","あそんで"],["泳ぎます","泳いで","およいで"],["します","して","して"],["来ます","来て","きて"]
+["遊びます","遊んで","あそんで"],["泳ぎます","泳いで","およいで"],["します","して","して"],
+["来ます","来て","きて"]
 ];
 
 const $=s=>document.querySelector(s);
-const startBtn=$("#start"),exportBtn=$("#export"),clearBtn=$("#clear"),
-recBox=$("#rec"),title=$("#title"),counter=$("#counter"),heard=$("#heard"),
-list=$("#list"),threshold=$("#threshold"),thv=$("#thv");
+const startBtn=$("#start"),exportBtn=$("#export"),clearBtn=$("#clear");
+const recBox=$("#rec"),title=$("#title"),counter=$("#counter"),heard=$("#heard"),diag=$("#diag");
+const list=$("#list"),threshold=$("#threshold"),thv=$("#thv");
 
 let templates={};
-try{templates=JSON.parse(localStorage.getItem("teform_voice_templates_v3")||"{}")}catch{}
-let running=false;
+try{templates=JSON.parse(localStorage.getItem("teform_voice_templates_pro")||"{}")}catch{}
+
+let sharedStream=null;
+let audioCtx=null;
+let recognizer=null;
+let recognizerRunning=false;
+let keepRecognizerAlive=false;
+let appRunning=false;
+let attemptActive=false;
+let attemptTexts=[];
+let attemptResultResolver=null;
+let attemptSeq=0;
 
 threshold.oninput=()=>thv.textContent=threshold.value;
 
 function save(){
- localStorage.setItem("teform_voice_templates_v3",JSON.stringify(templates));
+  localStorage.setItem("teform_voice_templates_pro",JSON.stringify(templates));
 }
+
 function render(){
- list.innerHTML="";
- ITEMS.forEach((x,i)=>{
-  const d=document.createElement("div");
-  d.className="row";
-  d.innerHTML=
-   `<div class="word">${x[0]} → ${x[1]}</div>
-    <div class="count">${(templates[x[2]]||[]).length}/3</div>
-    <button class="light" data-i="${i}">録音</button>`;
-  list.appendChild(d);
- });
- list.querySelectorAll("button").forEach(b=>{
-   b.onclick=()=>single(Number(b.dataset.i));
- });
+  list.innerHTML="";
+  for(const x of ITEMS){
+    const d=document.createElement("div");
+    d.className="row";
+    d.innerHTML=`<div class="word">${x[0]} → ${x[1]}</div>
+                 <div class="count">${Math.min((templates[x[2]]||[]).length,3)}/3</div>`;
+    list.appendChild(d);
+  }
 }
+
 function norm(s){
- return (s||"")
-   .trim()
-   .replace(/[、。！？!?,.\s「」『』]/g,"")
-   .replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
-}
-function matchesAny(texts,item){
- const expected=[norm(item[1]),norm(item[2])];
- return texts.some(t=>{
-   const n=norm(t);
-   return expected.some(e=>n===e || n.endsWith(e));
- });
+  return (s||"")
+    .trim()
+    .replace(/[、。！？!?,.\s「」『』]/g,"")
+    .replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
 }
 
-/* ---------- Google/Chrome recognition ONLY ---------- */
-function recognize(item){
- return new Promise(resolve=>{
-   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-   if(!SR){
-     resolve({ok:false,error:"このブラウザは音声認識に対応していません",texts:[]});
-     return;
-   }
+// Googleが漢字で返しても、判定時は最終的に全部ひらがなとして比較する。
+// 各問題について、よく出る同音異字をその問題の正解ひらがなへ寄せる。
+function toHiraganaForItem(text,item){
+  const n=norm(text);
 
-   const r=new SR();
-   r.lang="ja-JP";
-   r.interimResults=false;
-   r.continuous=false;
-   r.maxAlternatives=5;
+  const variants={
+    "かいて":["かいて","書いて","描いて"],
+    "きいて":["きいて","聞いて","聴いて","訊いて"],
+    "よんで":["よんで","読んで","呼んで"],
+    "のんで":["のんで","飲んで"],
+    "はなして":["はなして","話して","離して","放して"],
+    "たべて":["たべて","食べて"],
+    "みて":["みて","見て","観て"],
+    "おきて":["おきて","起きて","置きて"],
+    "ねて":["ねて","寝て"],
+    "いって":["いって","行って","言って"],
+    "かって":["かって","買って","勝って","飼って"],
+    "まって":["まって","待って"],
+    "あそんで":["あそんで","遊んで"],
+    "およいで":["およいで","泳いで"],
+    "して":["して"],
+    "きて":["きて","来て","着て"]
+  };
 
-   let settled=false;
-   const done=x=>{
-     if(settled)return;
-     settled=true;
-     clearTimeout(timer);
-     resolve(x);
-   };
+  for(const v of (variants[item[2]]||[])){
+    if(n===norm(v)) return item[2];
+  }
 
-   r.onresult=e=>{
-     const texts=[];
-     if(e.results && e.results[0]){
-       for(let i=0;i<e.results[0].length;i++){
-         const t=e.results[0][i]?.transcript;
-         if(t)texts.push(t);
-       }
-     }
-     done({ok:matchesAny(texts,item),texts,error:""});
-   };
-
-   r.onerror=e=>{
-     done({ok:false,texts:[],error:e.error||"recognition-error"});
-   };
-
-   r.onend=()=>{
-     if(!settled)done({ok:false,texts:[],error:"no-result"});
-   };
-
-   const timer=setTimeout(()=>{
-     try{r.abort()}catch{}
-     done({ok:false,texts:[],error:"timeout"});
-   },6000);
-
-   try{
-     r.start();
-   }catch(e){
-     done({ok:false,texts:[],error:e.message||String(e)});
-   }
- });
+  return n;
 }
 
-/* ---------- Recording ONLY ---------- */
-async function recordPcm(ms=1700){
- const stream=await navigator.mediaDevices.getUserMedia({
-   audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}
- });
- const ctx=new (window.AudioContext||window.webkitAudioContext)();
- const src=ctx.createMediaStreamSource(stream);
- const proc=ctx.createScriptProcessor(4096,1,1);
- const parts=[];
+function accepted(text,item){
+  return toHiraganaForItem(text,item) === item[2];
+}
 
- proc.onaudioprocess=e=>{
-   parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
- };
+async function getMicPermissionState(){
+  try{
+    if(navigator.permissions && navigator.permissions.query){
+      const p=await navigator.permissions.query({name:"microphone"});
+      return p.state; // granted / prompt / denied
+    }
+  }catch{}
+  return "unknown";
+}
 
- src.connect(proc);
- proc.connect(ctx.destination);
+async function ensureMic(){
+  if(sharedStream && sharedStream.active)return sharedStream;
 
- await new Promise(r=>setTimeout(r,ms));
+  const state=await getMicPermissionState();
 
- proc.disconnect();
- src.disconnect();
- stream.getTracks().forEach(t=>t.stop());
+  // localStorageは「前に許可した」目印としてだけ使う。
+  // 実際の許可そのものはブラウザがorigin単位で管理する。
+  const wasGranted = localStorage.getItem("teform_mic_permission_seen")==="1";
 
- const total=parts.reduce((n,a)=>n+a.length,0);
- const raw=new Float32Array(total);
- let pos=0;
- for(const a of parts){raw.set(a,pos);pos+=a.length}
+  sharedStream=await navigator.mediaDevices.getUserMedia({
+    audio:{
+      echoCancellation:true,
+      noiseSuppression:true,
+      autoGainControl:true,
+      channelCount:1
+    }
+  });
 
- const rate=ctx.sampleRate;
- await ctx.close();
- return resample(raw,rate,16000);
+  localStorage.setItem("teform_mic_permission_seen","1");
+
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==="suspended")await audioCtx.resume();
+
+  diag.textContent = "マイク許可：" + ((state==="granted" || wasGranted) ? "許可済み" : "今回許可");
+  return sharedStream;
+}
+
+function initRecognizer(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR)throw new Error("このブラウザはGoogle音声認識に対応していません。Chromeで開いてください。");
+
+  recognizer=new SR();
+  recognizer.lang="ja-JP";
+  recognizer.continuous=true;
+  recognizer.interimResults=true;
+  recognizer.maxAlternatives=5;
+
+  recognizer.onstart=()=>{
+    recognizerRunning=true;
+    diag.textContent="音声認識：接続中";
+  };
+
+  recognizer.onresult=e=>{
+    if(!attemptActive)return;
+
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      for(let j=0;j<r.length;j++){
+        const t=(r[j].transcript||"").trim();
+        if(t && !attemptTexts.includes(t)){
+          attemptTexts.push(t);
+        }
+      }
+    }
+
+    if(attemptTexts.length){
+      // 表示は判定確定後に一度だけ更新する。
+      // ここでは内部データだけ受け取り、画面は触らない。
+      if(attemptResultResolver){
+        attemptResultResolver();
+        attemptResultResolver=null;
+      }
+    }
+  };
+
+  recognizer.onerror=e=>{
+    diag.textContent="音声認識："+e.error;
+  };
+
+  recognizer.onend=()=>{
+    recognizerRunning=false;
+    diag.textContent="音声認識：再接続中";
+
+    if(keepRecognizerAlive){
+      setTimeout(()=>{
+        try{
+          recognizer.start();
+        }catch{}
+      },120);
+    }
+  };
+}
+
+function startRecognizerOnce(){
+  if(!recognizer)initRecognizer();
+  keepRecognizerAlive=true;
+
+  return new Promise(resolve=>{
+    if(recognizerRunning){resolve();return}
+
+    const old=recognizer.onstart;
+    recognizer.onstart=()=>{
+      old?.();
+      recognizer.onstart=old;
+      resolve();
+    };
+
+    try{
+      recognizer.start();
+    }catch{
+      setTimeout(resolve,250);
+    }
+
+    setTimeout(resolve,1500);
+  });
+}
+
+async function waitRecognizerReady(){
+  if(recognizerRunning)return;
+  await startRecognizerOnce();
+  await new Promise(r=>setTimeout(r,80));
 }
 
 function resample(x,from,to){
- if(from===to)return x;
- const len=Math.max(1,Math.round(x.length*to/from));
- const o=new Float32Array(len);
- for(let i=0;i<len;i++){
-   const p=i*from/to,a=Math.floor(p),b=Math.min(x.length-1,a+1),t=p-a;
-   o[i]=x[a]*(1-t)+x[b]*t;
- }
- return o;
+  if(from===to)return x;
+  const len=Math.max(1,Math.round(x.length*to/from));
+  const o=new Float32Array(len);
+  for(let i=0;i<len;i++){
+    const p=i*from/to,a=Math.floor(p),b=Math.min(x.length-1,a+1),t=p-a;
+    o[i]=x[a]*(1-t)+x[b]*t;
+  }
+  return o;
+}
+
+async function captureAttempt(ms=1450){
+  const stream=await ensureMic();
+  if(audioCtx.state==="suspended")await audioCtx.resume();
+
+  const src=audioCtx.createMediaStreamSource(stream);
+  const proc=audioCtx.createScriptProcessor(2048,1,1);
+  const gain=audioCtx.createGain();
+  gain.gain.value=0;
+  const parts=[];
+
+  proc.onaudioprocess=e=>{
+    parts.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+
+  src.connect(proc);
+  proc.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  await new Promise(r=>setTimeout(r,ms));
+
+  proc.disconnect();
+  src.disconnect();
+  gain.disconnect();
+
+  const total=parts.reduce((n,a)=>n+a.length,0);
+  const raw=new Float32Array(total);
+  let pos=0;
+  for(const a of parts){raw.set(a,pos);pos+=a.length}
+
+  return resample(raw,audioCtx.sampleRate,16000);
 }
 
 function trim(x){
- let mx=0;
- for(const v of x)mx=Math.max(mx,Math.abs(v));
- if(mx<.006)return x;
+  let mx=0;
+  for(const v of x)mx=Math.max(mx,Math.abs(v));
+  if(mx<.006)return x;
 
- const th=Math.max(.01,mx*.07),w=320;
- const rms=p=>{
-   let s=0,n=0;
-   for(let i=p;i<Math.min(x.length,p+w);i++){s+=x[i]*x[i];n++}
-   return Math.sqrt(s/Math.max(1,n));
- };
+  const th=Math.max(.01,mx*.07),w=320;
+  const rms=p=>{
+    let s=0,n=0;
+    for(let i=p;i<Math.min(x.length,p+w);i++){s+=x[i]*x[i];n++}
+    return Math.sqrt(s/Math.max(1,n));
+  };
 
- let a=0,b=x.length;
- for(let p=0;p<x.length-w;p+=160){
-   if(rms(p)>th){a=Math.max(0,p-640);break}
- }
- for(let p=x.length-w;p>0;p-=160){
-   if(rms(p)>th){b=Math.min(x.length,p+w+640);break}
- }
- return x.slice(a,b);
+  let a=0,b=x.length;
+  for(let p=0;p<x.length-w;p+=160){
+    if(rms(p)>th){a=Math.max(0,p-640);break}
+  }
+  for(let p=x.length-w;p>0;p-=160){
+    if(rms(p)>th){b=Math.min(x.length,p+w+640);break}
+  }
+
+  return x.slice(a,b);
 }
 
 function fingerprint(x){
- x=trim(x);
- if(x.length<1500)throw Error("声が短すぎます");
+  x=trim(x);
+  if(x.length<1500)throw new Error("声が短すぎます");
 
- const F=28,B=18,N=256,out=[];
+  const F=28,B=18,N=256,out=[];
 
- for(let f=0;f<F;f++){
-   const st=Math.max(0,Math.min(
-     x.length-N-1,
-     Math.floor((f+.5)/F*x.length-N/2)
-   ));
+  for(let f=0;f<F;f++){
+    const st=Math.max(0,Math.min(
+      x.length-N-1,
+      Math.floor((f+.5)/F*x.length-N/2)
+    ));
 
-   const row=[];
+    const row=[];
 
-   for(let b=0;b<B;b++){
-     const fr=180*Math.pow(4200/180,b/(B-1));
-     const w=2*Math.PI*fr/16000;
-     let re=0,im=0;
+    for(let b=0;b<B;b++){
+      const fr=180*Math.pow(4200/180,b/(B-1));
+      const w=2*Math.PI*fr/16000;
+      let re=0,im=0;
 
-     for(let n=0;n<N;n++){
-       const win=.5-.5*Math.cos(2*Math.PI*n/(N-1));
-       const v=(x[st+n]||0)*win;
-       re+=v*Math.cos(w*n);
-       im-=v*Math.sin(w*n);
-     }
+      for(let n=0;n<N;n++){
+        const win=.5-.5*Math.cos(2*Math.PI*n/(N-1));
+        const v=(x[st+n]||0)*win;
+        re+=v*Math.cos(w*n);
+        im-=v*Math.sin(w*n);
+      }
 
-     row.push(Math.log(1e-7+re*re+im*im));
-   }
+      row.push(Math.log(1e-7+re*re+im*im));
+    }
 
-   const m=row.reduce((a,b)=>a+b,0)/B;
-   let ss=0;
-   for(let b=0;b<B;b++){
-     row[b]-=m;
-     ss+=row[b]*row[b];
-   }
+    const m=row.reduce((a,b)=>a+b,0)/B;
+    let ss=0;
+    for(let b=0;b<B;b++){
+      row[b]-=m;
+      ss+=row[b]*row[b];
+    }
 
-   const sd=Math.sqrt(ss/B)||1;
-   for(let b=0;b<B;b++)row[b]/=sd;
+    const sd=Math.sqrt(ss/B)||1;
+    for(let b=0;b<B;b++)row[b]/=sd;
 
-   out.push(row);
- }
+    out.push(row);
+  }
 
- return out;
+  return out;
 }
 
-async function doOne(i){
- const item=ITEMS[i];
- const key=item[2];
- const existing=(templates[key]||[]).length;
+function waitForRecognition(maxMs=700){
+  if(attemptTexts.length)return Promise.resolve();
 
- title.textContent=item[1];
- counter.textContent=`確認　${existing+1}/3`;
- heard.textContent="認識結果：聞いています…";
- recBox.classList.add("on");
+  return new Promise(resolve=>{
+    let done=false;
+    const finish=()=>{
+      if(done)return;
+      done=true;
+      attemptResultResolver=null;
+      resolve();
+    };
 
- const result=await recognize(item);
-
- recBox.classList.remove("on");
-
- if(!result.ok){
-   const shown=result.texts?.length
-     ? result.texts.join(" / ")
-     : result.error || "認識できませんでした";
-
-   title.textContent="登録しません";
-   counter.textContent="もう一度確認します";
-   heard.textContent="認識結果："+shown;
-   return false;
- }
-
- heard.textContent="認識結果："+result.texts.join(" / ");
- title.textContent=item[1];
- counter.textContent="正しく認識されました。もう一度言ってください";
- recBox.classList.add("on");
-
- await new Promise(r=>setTimeout(r,450));
-
- const pcm=await recordPcm(1800);
- const feat=fingerprint(pcm);
-
- templates[key]=templates[key]||[];
- if(templates[key].length<3){
-   templates[key].push(feat);
-   save();
- }
-
- recBox.classList.remove("on");
- render();
-
- title.textContent=`${item[1]}　登録成功`;
- counter.textContent=`${templates[key].length}/3`;
-
- return true;
+    attemptResultResolver=finish;
+    setTimeout(finish,maxMs);
+  });
 }
 
-async function single(i){
- if(running)return;
- running=true;
- try{
-   await doOne(i);
- }catch(e){
-   recBox.classList.remove("on");
-   title.textContent="エラー";
-   counter.textContent=e.message||String(e);
- }
- running=false;
+
+function cueBeep(){
+  try{
+    const ctx=audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    osc.frequency.value=880;
+    gain.gain.setValueAtTime(0.0001,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12,ctx.currentTime+0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.08);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime+0.09);
+  }catch{}
 }
 
-startBtn.onclick=async()=>{
- if(running)return;
+async function doAttempt(item){
+  const key=item[2];
+  const count=(templates[key]||[]).length+1;
 
- running=true;
- startBtn.disabled=true;
- startBtn.textContent="自動登録中…";
+  await waitRecognizerReady();
 
- try{
-   for(let i=0;i<ITEMS.length;i++){
-     const key=ITEMS[i][2];
+  attemptSeq++;
+  attemptTexts=[];
+  attemptActive=true;
+  window.__currentItemForRecognition=item;
 
-     while((templates[key]||[]).length<3){
-       await doOne(i);
-       await new Promise(r=>setTimeout(r,700));
-     }
+  title.textContent=item[2];
+  counter.textContent=`録音中　${count}/3`;
+  heard.textContent="";
+  recBox.classList.add("on");
 
-     await new Promise(r=>setTimeout(r,500));
-   }
+  cueBeep();
 
-   title.textContent="すべて登録完了";
-   counter.textContent="";
-   heard.textContent="認識結果：―";
- }catch(e){
-   recBox.classList.remove("on");
-   title.textContent="エラー";
-   counter.textContent=e.message||String(e);
- }finally{
-   running=false;
-   startBtn.disabled=false;
-   startBtn.textContent="自動で3回ずつ登録";
- }
-};
+  const pcm=await captureAttempt(1900);
+
+  recBox.classList.remove("on");
+  title.textContent="";
+  counter.textContent="";
+  heard.textContent="";
+
+  // Googleの結果が少し遅れる場合だけ最大0.7秒待つ
+  await waitForRecognition(950);
+
+  attemptActive=false;
+
+  const matched=attemptTexts.find(t=>accepted(t,item));
+
+  if(!matched){
+    const judged = attemptTexts.length
+      ? attemptTexts.map(t=>norm(t)).join(" / ")
+      : "認識できませんでした";
+
+    title.textContent=judged;
+    counter.textContent="";
+    heard.textContent="";
+
+    await new Promise(r=>setTimeout(r,500));
+    return false;
+  }
+
+  const feat=fingerprint(pcm);
+  templates[key]=templates[key]||[];
+  templates[key].push(feat);
+  if(templates[key].length>3)templates[key]=templates[key].slice(0,3);
+
+  save();
+  render();
+
+  title.textContent=toHiraganaForItem(matched,item);
+  counter.textContent="";
+  heard.textContent="";
+
+  await new Promise(r=>setTimeout(r,500));
+  return true;
+}
+
+async function runAll(){
+  if(appRunning)return;
+
+  appRunning=true;
+  startBtn.disabled=true;
+  exportBtn.disabled=true;
+  clearBtn.disabled=true;
+
+  try{
+    title.textContent="準備中";
+    counter.textContent="最初だけマイクを許可してください";
+    heard.textContent="認識結果：準備中";
+
+    await ensureMic();
+    await startRecognizerOnce();
+
+    for(const item of ITEMS){
+      const key=item[2];
+      templates[key]=templates[key]||[];
+
+      while(templates[key].length<3){
+        await doAttempt(item);
+        await new Promise(r=>setTimeout(r,80));
+      }
+
+      await new Promise(r=>setTimeout(r,100));
+    }
+
+    title.textContent="すべて登録完了";
+    counter.textContent="";
+    heard.textContent="JSONを書き出してください";
+  }catch(e){
+    console.error(e);
+    recBox.classList.remove("on");
+    title.textContent="エラー";
+    counter.textContent=e.message||String(e);
+    heard.textContent="認識結果：―";
+  }finally{
+    appRunning=false;
+    startBtn.disabled=false;
+    exportBtn.disabled=false;
+    clearBtn.disabled=false;
+  }
+}
+
+startBtn.onclick=runAll;
 
 exportBtn.onclick=()=>{
- const data={
-   version:3,
-   threshold:Number(threshold.value),
-   createdAt:new Date().toISOString(),
-   templates
- };
+  const data={
+    version:5,
+    threshold:Number(threshold.value),
+    createdAt:new Date().toISOString(),
+    templates
+  };
 
- const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
- const a=document.createElement("a");
- a.href=URL.createObjectURL(blob);
- a.download="voice_templates.json";
- a.click();
- setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="voice_templates.json";
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 };
 
 clearBtn.onclick=()=>{
- if(confirm("登録を全部消しますか？")){
-   templates={};
-   save();
-   render();
- }
+  if(confirm("登録を全部消しますか？")){
+    templates={};
+    save();
+    render();
+    title.textContent="開始してください";
+    counter.textContent="";
+    heard.textContent="認識結果：―";
+  }
 };
+
+window.addEventListener("beforeunload",()=>{
+  keepRecognizerAlive=false;
+  try{recognizer?.stop()}catch{}
+  try{sharedStream?.getTracks().forEach(t=>t.stop())}catch{}
+  try{audioCtx?.close()}catch{}
+});
 
 render();
 </script>
