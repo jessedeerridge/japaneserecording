@@ -3,56 +3,69 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>て形 音声練習</title>
+<title>て形 正解音声登録 v6</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#f4f4f4;color:#111;font-family:system-ui,-apple-system,"Noto Sans JP","Yu Gothic",sans-serif}
-.wrap{width:min(620px,94vw);margin:24px auto 60px}
-.card{background:#fff;border:1px solid #ddd;border-radius:20px;padding:24px;box-shadow:0 5px 18px rgba(0,0,0,.06);text-align:center}
-h1{font-size:23px;margin:0 0 8px}.sub{font-size:13px;color:#666;margin-bottom:18px}
-.problem{font-size:54px;font-weight:900;min-height:110px;display:flex;align-items:center;justify-content:center;border:2px solid #222;border-radius:18px;margin-bottom:16px}
-.recordBox{min-height:155px;border:3px solid #111;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;transition:background .15s,color .15s}
-.recordBox.recording{background:#111;color:#fff}.recordMain{font-size:28px;font-weight:900}.recordSub{font-size:15px;margin-top:7px}
-.result{min-height:44px;margin-top:14px;font-size:30px;font-weight:900}.ok{color:#087f23}.ng{color:#c62828}
-.status{min-height:22px;margin-top:8px;font-size:14px;color:#666}
-button{border:0;border-radius:13px;padding:14px 20px;font-size:17px;font-weight:700;cursor:pointer}.primary{background:#111;color:#fff}.hidden{display:none}
-.debug{display:none;margin-top:7px;font-size:11px;color:#888}.debug.show{display:block}
+body{margin:0;background:#f3f4f6;color:#111;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
+.wrap{width:min(760px,94vw);margin:24px auto 60px}
+.card{background:#fff;border:1px solid #ddd;border-radius:20px;padding:24px;box-shadow:0 5px 18px rgba(0,0,0,.06)}
+h1{font-size:24px;margin:0 0 6px}.sub{font-size:13px;color:#666;margin-bottom:16px;line-height:1.5}
+.top{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+button{border:0;border-radius:12px;padding:12px 16px;font-size:16px;font-weight:700;cursor:pointer}
+button:disabled{opacity:.45}.primary{background:#111;color:#fff}.light{background:#e9e9e9}.warn{background:#ffe4e4;color:#8a1515}
+.rec{min-height:175px;border:3px solid #222;border-radius:17px;margin:12px 0 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:15px;transition:background .15s,color .15s}
+.rec.on{background:#111;color:#fff}
+.big{font-size:32px;font-weight:900}.mid{font-size:18px;margin-top:6px}
+.row{display:grid;grid-template-columns:1fr 62px;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid #eee}
+.word{font-size:18px}.count{text-align:center;color:#666}
+.note{margin-top:14px;background:#f7f7f7;padding:11px;border-radius:11px;font-size:13px;color:#555;line-height:1.55}
+.diag{margin-top:10px;font-size:12px;color:#777}
 </style>
 </head>
 <body>
 <div class="wrap"><div class="card">
-<h1>て形 音声練習</h1>
-<div class="sub">問題が出たら、て形を言ってください。</div>
-<div id="problem" class="problem">読み込み中…</div>
-<div id="recordBox" class="recordBox">
-<div id="recordMain" class="recordMain">準備中</div>
-<div id="recordSub" class="recordSub"></div>
+<h1>て形・正解音声登録 v6</h1>
+<div class="sub">新しい判定方式用です。合図音は鳴らしません。</div>
+
+<div class="top">
+<button id="start" class="primary">開始</button>
+<button id="export" class="light">JSONを書き出す</button>
+<button id="clear" class="warn">全部消す</button>
 </div>
-<div id="result" class="result"></div>
-<div id="status" class="status"></div>
-<div id="debug" class="debug"></div>
-<button id="startBtn" class="primary hidden">開始</button>
+
+<div id="rec" class="rec">
+<div id="title" class="big">開始してください</div>
+<div id="counter" class="mid"></div>
+</div>
+
+<div id="list"></div>
+<div class="note">黒くなったら表示された語を言ってください。正しく認識された録音だけ3回保存します。</div>
+<div id="diag" class="diag"></div>
 </div></div>
 
 <script>
 const ITEMS=[
-["書きます","かいて"],["聞きます","きいて"],["読みます","よんで"],["飲みます","のんで"],
-["話します","はなして"],["食べます","たべて"],["見ます","みて"],["起きます","おきて"],
-["寝ます","ねて"],["行きます","いって"],["買います","かって"],["待ちます","まって"],
-["遊びます","あそんで"],["泳ぎます","およいで"],["します","して"],["来ます","きて"]
+["書きます","書いて","かいて"],["聞きます","聞いて","きいて"],["読みます","読んで","よんで"],
+["飲みます","飲んで","のんで"],["話します","話して","はなして"],["食べます","食べて","たべて"],
+["見ます","見て","みて"],["起きます","起きて","おきて"],["寝ます","寝て","ねて"],
+["行きます","行って","いって"],["買います","買って","かって"],["待ちます","待って","まって"],
+["遊びます","遊んで","あそんで"],["泳ぎます","泳いで","およいで"],["します","して","して"],["来ます","来て","きて"]
 ];
 
 const $=s=>document.querySelector(s);
-const problem=$("#problem"),recordBox=$("#recordBox"),recordMain=$("#recordMain"),
-recordSub=$("#recordSub"),result=$("#result"),statusEl=$("#status"),
-startBtn=$("#startBtn"),debugEl=$("#debug");
+const startBtn=$("#start"),exportBtn=$("#export"),clearBtn=$("#clear");
+const recBox=$("#rec"),title=$("#title"),counter=$("#counter"),list=$("#list"),diag=$("#diag");
 
-const DEBUG=new URLSearchParams(location.search).get("debug")==="1";
-if(DEBUG)debugEl.classList.add("show");
+let templates={};
+try{
+  const old=JSON.parse(localStorage.getItem("teform_voice_templates_v6")||"{}");
+  templates=old||{};
+}catch{}
 
-let templates={},calibration={};
-let stream=null,audioCtx=null;
-let currentIndex=0,started=false,running=false;
+let stream=null,audioCtx=null,recognizer=null;
+let recognizerRunning=false,keepRecognizerAlive=false;
+let attemptActive=false,attemptTexts=[],attemptResolver=null;
+let appRunning=false;
 
 
 const FEATURE_VERSION=6;
@@ -433,18 +446,36 @@ function classCalibration(key,templates){
 }
 
 
-async function loadTemplates(){
-  const res=await fetch("./voice_templates.json?v="+Date.now(),{cache:"no-store"});
-  if(!res.ok)throw new Error("voice_templates.json を読み込めません");
+function save(){
+  localStorage.setItem("teform_voice_templates_v6",JSON.stringify(templates));
+}
 
-  const data=await res.json();
-
-  if(data.version!==FEATURE_VERSION){
-    throw new Error("正解音声データが旧方式です。v6で登録し直してください");
+function render(){
+  list.innerHTML="";
+  for(const item of ITEMS){
+    const d=document.createElement("div");
+    d.className="row";
+    d.innerHTML=`<div class="word">${item[0]} → ${item[1]}</div><div class="count">${Math.min((templates[item[2]]||[]).length,3)}/3</div>`;
+    list.appendChild(d);
   }
+}
 
-  templates=data.templates||{};
-  calibration=data.calibration||{};
+function norm(s){
+  return (s||"").trim().replace(/[、。！？!?,.\s「」『』]/g,"").replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
+}
+
+function accepted(text,item){
+  const n=norm(text);
+  const variants={
+    "かいて":["かいて","書いて","描いて"],"きいて":["きいて","聞いて","聴いて","訊いて"],
+    "よんで":["よんで","読んで","呼んで"],"のんで":["のんで","飲んで"],
+    "はなして":["はなして","話して","離して","放して"],"たべて":["たべて","食べて"],
+    "みて":["みて","見て","観て"],"おきて":["おきて","起きて"],"ねて":["ねて","寝て"],
+    "いって":["いって","行って","言って"],"かって":["かって","買って","勝って","飼って"],
+    "まって":["まって","待って"],"あそんで":["あそんで","遊んで"],"およいで":["およいで","泳いで"],
+    "して":["して"],"きて":["きて","来て","着て"]
+  };
+  return (variants[item[2]]||[]).some(v=>n===norm(v));
 }
 
 async function ensureMic(){
@@ -459,7 +490,55 @@ async function ensureMic(){
   if(audioCtx.state==="suspended")await audioCtx.resume();
 }
 
-async function capture(ms=2400){
+function initRecognizer(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR)throw new Error("Chromeで開いてください");
+
+  recognizer=new SR();
+  recognizer.lang="ja-JP";
+  recognizer.continuous=true;
+  recognizer.interimResults=true;
+  recognizer.maxAlternatives=5;
+
+  recognizer.onstart=()=>{recognizerRunning=true;diag.textContent="音声認識：接続中"};
+  recognizer.onend=()=>{
+    recognizerRunning=false;
+    if(keepRecognizerAlive)setTimeout(()=>{try{recognizer.start()}catch{}},120);
+  };
+  recognizer.onerror=e=>diag.textContent="音声認識："+e.error;
+
+  recognizer.onresult=e=>{
+    if(!attemptActive)return;
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      for(let j=0;j<e.results[i].length;j++){
+        const t=(e.results[i][j].transcript||"").trim();
+        if(t&&!attemptTexts.includes(t))attemptTexts.push(t);
+      }
+    }
+    if(attemptTexts.length&&attemptResolver){
+      const r=attemptResolver;attemptResolver=null;r();
+    }
+  };
+}
+
+async function ensureRecognizer(){
+  if(!recognizer)initRecognizer();
+  keepRecognizerAlive=true;
+  if(recognizerRunning)return;
+
+  await new Promise(resolve=>{
+    const old=recognizer.onstart;
+    recognizer.onstart=()=>{
+      old?.();
+      recognizer.onstart=old;
+      resolve();
+    };
+    try{recognizer.start()}catch{}
+    setTimeout(resolve,1200);
+  });
+}
+
+async function capture(ms=1900){
   await ensureMic();
   if(audioCtx.state==="suspended")await audioCtx.resume();
 
@@ -486,142 +565,121 @@ async function capture(ms=2400){
   return resample(raw,audioCtx.sampleRate,TARGET_SR);
 }
 
-function newQuestion(){
-  let n;
-  do{n=Math.floor(Math.random()*ITEMS.length)}
-  while(n===currentIndex&&ITEMS.length>1);
-
-  currentIndex=n;
-  problem.textContent=ITEMS[n][0];
-  result.textContent="";
-  statusEl.textContent="";
+function waitRecognition(ms=900){
+  if(attemptTexts.length)return Promise.resolve();
+  return new Promise(resolve=>{
+    let done=false;
+    const finish=()=>{if(done)return;done=true;attemptResolver=null;resolve()};
+    attemptResolver=finish;
+    setTimeout(finish,ms);
+  });
 }
 
-function judge(feat,target){
-  const scores=classScores(feat,templates);
-  if(!scores.length)return {correct:false,best:null,scores};
+async function doAttempt(item){
+  await ensureRecognizer();
 
-  const best=scores[0];
-  const second=scores[1]||null;
-  const targetObj=scores.find(x=>x.key===target)||null;
-  if(!targetObj)return {correct:false,best,second,scores};
+  const key=item[2];
+  const count=(templates[key]||[]).length+1;
 
-  // The spoken word must actually identify as the target.
-  if(best.key!==target){
-    return {correct:false,best,second,targetObj,scores};
+  attemptTexts=[];
+  attemptActive=true;
+
+  recBox.classList.add("on");
+  title.textContent=key;
+  counter.textContent=`録音中　${count}/3`;
+
+  // No beep. Capture begins only after the visual cue is on screen.
+  await sleep(80);
+  const pcm=await capture(1900);
+
+  recBox.classList.remove("on");
+  title.textContent="";
+  counter.textContent="";
+
+  await waitRecognition(950);
+  attemptActive=false;
+
+  const matched=attemptTexts.find(t=>accepted(t,item));
+  if(!matched){
+    title.textContent=attemptTexts.length?norm(attemptTexts[0]):"認識できませんでした";
+    await sleep(500);
+    return false;
   }
-
-  const cal=calibration[target]||classCalibration(target,templates);
-
-  // Reject something far outside the teacher's recordings.
-  const absPass=!Number.isFinite(cal.limit)||targetObj.score<=cal.limit;
-
-  // Also reject an ambiguous top-1 unless it is very close to the target model.
-  let marginPass=true;
-  let ratio=0;
-  if(second){
-    ratio=targetObj.score/(second.score||1e-9);
-    const veryClose=Number.isFinite(cal.median)&&targetObj.score<=cal.median*1.28;
-    marginPass=ratio<=.94||veryClose;
-  }
-
-  return {
-    correct:absPass&&marginPass,
-    best,second,targetObj,scores,ratio,cal,absPass,marginPass
-  };
-}
-
-async function attempt(){
-  const target=ITEMS[currentIndex][1];
-
-  result.textContent="";
-  statusEl.textContent="";
-
-  await sleep(600);
-
-  recordBox.classList.add("recording");
-  recordMain.textContent="録音中";
-  recordSub.textContent="いま言ってください";
-
-  const pcm=await capture(2400);
-
-  recordBox.classList.remove("recording");
-  recordMain.textContent="";
-  recordSub.textContent="";
 
   const feat=mfccSequence(pcm);
-  const j=judge(feat,target);
+  templates[key]=templates[key]||[];
+  templates[key].push(feat);
+  if(templates[key].length>3)templates[key]=templates[key].slice(-3);
 
-  if(!j.best)throw new Error("正解音声データがありません");
+  save();render();
 
-  if(DEBUG){
-    debugEl.textContent=j.scores.slice(0,4).map(x=>`${x.key}:${x.score.toFixed(3)}`).join(" / ");
-  }
-
-  if(j.correct){
-    result.textContent="○";
-    result.className="result ok";
-    await sleep(600);
-    newQuestion();
-  }else{
-    result.textContent="×";
-    result.className="result ng";
-    statusEl.textContent=`いちばん近い音：${j.best.key}`;
-    await sleep(850);
-  }
+  title.textContent=key;
+  await sleep(450);
+  return true;
 }
 
-async function practiceLoop(){
-  if(running)return;
-  running=true;
+async function runAll(){
+  if(appRunning)return;
+  appRunning=true;
+  startBtn.disabled=exportBtn.disabled=clearBtn.disabled=true;
+
   try{
-    while(started){
-      try{
-        await attempt();
-      }catch(e){
-        console.error(e);
-        recordBox.classList.remove("recording");
-        recordMain.textContent="もう一度";
-        recordSub.textContent="";
-        statusEl.textContent=e.message||String(e);
-        await sleep(900);
+    await ensureMic();
+    await ensureRecognizer();
+
+    for(const item of ITEMS){
+      const key=item[2];
+      templates[key]=templates[key]||[];
+      while(templates[key].length<3){
+        await doAttempt(item);
+        await sleep(80);
       }
     }
+
+    title.textContent="すべて登録完了";
+    counter.textContent="JSONを書き出してください";
+  }catch(e){
+    console.error(e);
+    recBox.classList.remove("on");
+    title.textContent="エラー";
+    counter.textContent=e.message||String(e);
   }finally{
-    running=false;
+    appRunning=false;
+    startBtn.disabled=exportBtn.disabled=clearBtn.disabled=false;
   }
 }
 
-startBtn.onclick=async()=>{
-  try{
-    startBtn.disabled=true;
-    startBtn.textContent="マイク準備中…";
-    await ensureMic();
+startBtn.onclick=runAll;
 
-    started=true;
-    startBtn.classList.add("hidden");
-    newQuestion();
-    await sleep(400);
-    practiceLoop();
-  }catch(e){
-    startBtn.disabled=false;
-    startBtn.textContent="開始";
-    statusEl.textContent=e.message||String(e);
+exportBtn.onclick=()=>{
+  const calibration={};
+  for(const item of ITEMS){
+    calibration[item[2]]=classCalibration(item[2],templates);
+  }
+
+  const data={
+    version:FEATURE_VERSION,
+    createdAt:new Date().toISOString(),
+    feature:"mfcc12+delta-cmvn-v6",
+    templates,
+    calibration
+  };
+
+  const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="voice_templates.json";
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+
+clearBtn.onclick=()=>{
+  if(confirm("登録を全部消しますか？")){
+    templates={};save();render();
+    title.textContent="開始してください";counter.textContent="";
   }
 };
 
-(async()=>{
-  try{
-    await loadTemplates();
-    problem.textContent="準備OK";
-    recordMain.textContent="開始を押してください";
-    recordSub.textContent="最初だけマイクを許可します";
-    startBtn.classList.remove("hidden");
-  }catch(e){
-    problem.textContent="データエラー";
-    recordMain.textContent="";
-    statusEl.textContent=e.message||String(e);
-  }
-})();
+render();
 </script>
 </body></html>
